@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: asset_registry
+          POSTGRES_USER: asset_registry
+          POSTGRES_PASSWORD: asset_registry
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U asset_registry -d asset_registry"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      ASSET_REGISTRY_DATABASE_URL: postgresql+psycopg://asset_registry:asset_registry@127.0.0.1:5432/asset_registry
+      ASSET_REGISTRY_TEST_DATABASE_URL: postgresql+psycopg://asset_registry:asset_registry@127.0.0.1:5432/asset_registry
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: python -m pip install -e ".[dev]"
+      - name: Run migrations
+        run: alembic upgrade head
+      - name: Run tests
+        run: pytest
+      - name: Verify generated OpenAPI snapshot
+        run: python scripts/generate_openapi.py --check
+
+  sdk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: sdk/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Run checks
+        run: npm run check
+      - name: Build package
+        run: npm run build

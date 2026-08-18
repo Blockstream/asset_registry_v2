@@ -1,0 +1,8 @@
+services:
+  signer:
+    build: .
+    ports:
+      - "8002:8000"
+    env_file:
+      - .env
+    restart: unless-stopped

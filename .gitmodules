@@ -1,0 +1,3 @@
+[submodule "asset_registry"]
+	path = asset_registry
+	url = https://github.com/Blockstream/asset_registry.git

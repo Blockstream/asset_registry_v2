@@ -1,0 +1,82 @@
+{
+  "name": "liquid-asset-registry-sdk",
+  "version": "0.1.0",
+  "description": "Client SDK for the Liquid Asset Registry v2 API",
+  "type": "module",
+  "sideEffects": false,
+  "main": "dist/cjs/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js"
+    },
+    "./utils/*": {
+      "types": "./dist/types/utils/*.d.ts",
+      "import": "./dist/esm/utils/*.js",
+      "require": "./dist/cjs/utils/*.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "npm run build:types && npm run build:esm && npm run build:cjs && npm run typecheck:package",
+    "build:types": "tsc -p tsconfig.types.json && node scripts/copy-generated-types.mjs",
+    "build:esm": "tsc -p tsconfig.esm.json",
+    "build:cjs": "tsc -p tsconfig.cjs.json && node scripts/write-cjs-package.mjs",
+    "generate:types": "openapi-typescript ../openapi.yaml -o src/generated/openapi.d.ts",
+    "check:types": "openapi-typescript ../openapi.yaml -o src/generated/openapi.d.ts --check",
+    "typecheck": "tsc -p tsconfig.json",
+    "typecheck:examples": "tsc -p tsconfig.examples.json",
+    "typecheck:package": "tsc -p tsconfig.package.json",
+    "audit": "npm audit --audit-level=high",
+    "check": "npm run audit && npm run check:types && npm run format:check && npm run lint && npm run typecheck && npm run typecheck:examples && npm test",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "format": "prettier --write \"src/**/*.{ts,js}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,js}\"",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run clean && npm run build",
+    "example:v2-examples": "tsx examples/v2-examples.ts"
+  },
+  "keywords": [
+    "liquid",
+    "asset",
+    "registry",
+    "blockchain",
+    "sdk"
+  ],
+  "author": "Registry contributors",
+  "license": "MIT",
+  "packageManager": "npm@10.9.3",
+  "engines": {
+    "node": ">=18.18"
+  },
+  "dependencies": {
+    "@noble/curves": "^1.4.0",
+    "@noble/hashes": "^1.8.0",
+    "uuid": "^11.1.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^20.0.0",
+    "@typescript-eslint/eslint-plugin": "8.55.0",
+    "@typescript-eslint/parser": "8.55.0",
+    "eslint": "^9.39.5",
+    "globals": "^17.11.0",
+    "jest": "^30.4.2",
+    "openapi-typescript": "^7.13.0",
+    "prettier": "^3.0.0",
+    "ts-jest": "^29.4.12",
+    "tsx": "^4.23.1",
+    "typescript": "^5.0.0"
+  }
+}
