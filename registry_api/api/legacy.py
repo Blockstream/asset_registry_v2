@@ -15,7 +15,10 @@ from registry_api.chain import EsploraChainVerifier
 from registry_api.db import get_db
 from registry_api.errors import ErrorCode, RegistryError
 from registry_api.http_clients import HttpxProofClient
-from registry_api.icons import stream_icon_map_bytes
+from registry_api.icons import (
+    liquid_mainnet_policy_asset_icon_fallback,
+    stream_icon_map_bytes,
+)
 from registry_api.legacy_assets import deregister_legacy_asset, get_legacy_asset
 from registry_api.legacy_response import legacy_registration_response
 from registry_api.rate_limit import registration_rate_limit
@@ -153,9 +156,21 @@ def list_assets_legacy_root() -> StreamingResponse:
         }
     },
 )
-def get_icons_legacy() -> StreamingResponse:
+def get_icons_legacy(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> StreamingResponse:
     """Return current approved icons as raw Base64 values keyed by asset ID."""
-    return StreamingResponse(stream_icon_map_bytes(), media_type="application/json")
+    # Compatibility fallback until the Liquid policy asset has a registry-backed icon.
+    # stream_icon_map_bytes gives a future approved database icon precedence.
+    fallback_icons = (
+        liquid_mainnet_policy_asset_icon_fallback()
+        if settings.network == "liquid"
+        else None
+    )
+    return StreamingResponse(
+        stream_icon_map_bytes(fallback_icons=fallback_icons),
+        media_type="application/json",
+    )
 
 
 @router.post(
