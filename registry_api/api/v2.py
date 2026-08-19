@@ -200,7 +200,18 @@ def search_assets_v2(
     page: Annotated[int, Query(ge=1, le=1_000_000)] = 1,
     page_size: Annotated[int, Query(ge=1, le=500)] = 50,
     sort: Literal[
-        "asset_id_asc", "name_asc", "ticker_asc", "created_at_desc", "updated_at_desc"
+        "asset_id_asc",
+        "asset_id_desc",
+        "domain_asc",
+        "domain_desc",
+        "name_asc",
+        "name_desc",
+        "ticker_asc",
+        "ticker_desc",
+        "created_at_asc",
+        "created_at_desc",
+        "updated_at_asc",
+        "updated_at_desc",
     ] = "asset_id_asc",
     asset_id: Annotated[
         str | None,
