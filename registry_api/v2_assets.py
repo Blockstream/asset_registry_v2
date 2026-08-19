@@ -70,13 +70,22 @@ from registry_api.validation import (
     require_trading_venue,
 )
 
-V2_SORTS = {
-    "asset_id_asc",
-    "name_asc",
-    "ticker_asc",
-    "created_at_desc",
-    "updated_at_desc",
+_SORT_COLUMNS: dict[str, tuple] = {
+    "asset_id_asc": (Asset.asset_id.asc(),),
+    "asset_id_desc": (Asset.asset_id.desc(),),
+    "domain_asc": (Asset.domain.asc().nulls_last(),),
+    "domain_desc": (Asset.domain.desc().nulls_last(),),
+    "name_asc": (Asset.name.asc().nulls_last(),),
+    "name_desc": (Asset.name.desc().nulls_last(),),
+    "ticker_asc": (Asset.ticker.asc().nulls_last(),),
+    "ticker_desc": (Asset.ticker.desc().nulls_last(),),
+    "created_at_asc": (Asset.created_at.asc(),),
+    "created_at_desc": (Asset.created_at.desc(),),
+    "updated_at_asc": (Asset.updated_at.asc(),),
+    "updated_at_desc": (Asset.updated_at.desc(),),
 }
+
+V2_SORTS = set(_SORT_COLUMNS.keys())
 
 
 def asset_icon_href(asset_id: str, icon_hash: str) -> str:
@@ -619,23 +628,8 @@ def _with_asset_children(query: Select[tuple[Asset]]) -> Select[tuple[Asset]]:
 
 
 def _apply_sort(query: Select[tuple[Asset]], sort: str) -> Select[tuple[Asset]]:
-    if sort == "name_asc":
-        return query.order_by(
-            Asset.name.asc(), Asset.asset_id.asc(), Asset.asset_uuid.asc()
-        )
-    if sort == "ticker_asc":
-        return query.order_by(
-            Asset.ticker.asc(), Asset.asset_id.asc(), Asset.asset_uuid.asc()
-        )
-    if sort == "created_at_desc":
-        return query.order_by(
-            Asset.created_at.desc(), Asset.asset_id.asc(), Asset.asset_uuid.asc()
-        )
-    if sort == "updated_at_desc":
-        return query.order_by(
-            Asset.updated_at.desc(), Asset.asset_id.asc(), Asset.asset_uuid.asc()
-        )
-    return query.order_by(Asset.asset_id.asc(), Asset.asset_uuid.asc())
+    primary = _SORT_COLUMNS.get(sort, ())
+    return query.order_by(*primary, Asset.asset_id.asc(), Asset.asset_uuid.asc())
 
 
 def _escape_like_prefix(value: str) -> str:

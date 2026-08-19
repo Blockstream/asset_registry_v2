@@ -173,9 +173,16 @@ def test_v2_asset_search_openapi_describes_sort_and_category_tag_semantics() -> 
     by_name = {parameter["name"]: parameter for parameter in parameters}
     assert by_name["sort"]["schema"]["enum"] == [
         "asset_id_asc",
+        "asset_id_desc",
+        "domain_asc",
+        "domain_desc",
         "name_asc",
+        "name_desc",
         "ticker_asc",
+        "ticker_desc",
+        "created_at_asc",
         "created_at_desc",
+        "updated_at_asc",
         "updated_at_desc",
     ]
     assert "any of the supplied tags" in by_name["category_tag"]["description"]

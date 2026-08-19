@@ -2263,7 +2263,7 @@ export interface operations {
             query?: {
                 page?: number;
                 page_size?: number;
-                sort?: "asset_id_asc" | "name_asc" | "ticker_asc" | "created_at_desc" | "updated_at_desc";
+                sort?: "asset_id_asc" | "asset_id_desc" | "domain_asc" | "domain_desc" | "name_asc" | "name_desc" | "ticker_asc" | "ticker_desc" | "created_at_asc" | "created_at_desc" | "updated_at_asc" | "updated_at_desc";
                 /** @description Case-insensitive asset ID prefix. */
                 asset_id?: string;
                 /** @description Case-insensitive exact domain match. */

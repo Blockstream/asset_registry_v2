@@ -337,6 +337,110 @@ def test_v2_lookup_search_filters_pagination_and_all_json(session_factory) -> No
     }
 
 
+def test_v2_search_sorts_text_fields_in_both_directions(session_factory) -> None:
+    with session_factory() as session:
+        register_v2_asset(session, v2_request())
+    with session_factory() as session:
+        register_v2_asset(
+            session,
+            v2_request(
+                asset_id=ASSET_ID_2,
+                pubkey=PUBKEY_2,
+                domain="issuer.example.com",
+                ticker="BONDY",
+                name="Bond Asset",
+            ),
+        )
+
+    with session_factory() as session:
+        sorted_asset_ids = {
+            sort: [item.asset_id for item in search_v2_assets(session, sort=sort).items]
+            for sort in (
+                "domain_asc",
+                "domain_desc",
+                "name_asc",
+                "name_desc",
+                "ticker_asc",
+                "ticker_desc",
+            )
+        }
+
+    assert sorted_asset_ids == {
+        "domain_asc": [ASSET_ID_2, ASSET_ID],
+        "domain_desc": [ASSET_ID, ASSET_ID_2],
+        "name_asc": [ASSET_ID_2, ASSET_ID],
+        "name_desc": [ASSET_ID, ASSET_ID_2],
+        "ticker_asc": [ASSET_ID_2, ASSET_ID],
+        "ticker_desc": [ASSET_ID, ASSET_ID_2],
+    }
+
+
+def test_v2_search_sorts_ids_and_timestamps_in_both_directions(
+    session_factory,
+) -> None:
+    older_created_at = datetime(2026, 1, 1, tzinfo=UTC)
+    newer_created_at = datetime(2026, 1, 2, tzinfo=UTC)
+    older_updated_at = datetime(2026, 1, 3, tzinfo=UTC)
+    newer_updated_at = datetime(2026, 1, 4, tzinfo=UTC)
+
+    with session_factory() as session:
+        register_v2_asset(session, v2_request())
+        register_v2_asset(
+            session,
+            v2_request(
+                asset_id=ASSET_ID_2,
+                pubkey=PUBKEY_2,
+                domain="issuer.example.com",
+                ticker="BONDY",
+            ),
+        )
+        session.execute(
+            text(
+                "update assets set created_at = :created_at, updated_at = :updated_at "
+                "where asset_id = :asset_id"
+            ),
+            {
+                "asset_id": ASSET_ID,
+                "created_at": older_created_at,
+                "updated_at": newer_updated_at,
+            },
+        )
+        session.execute(
+            text(
+                "update assets set created_at = :created_at, updated_at = :updated_at "
+                "where asset_id = :asset_id"
+            ),
+            {
+                "asset_id": ASSET_ID_2,
+                "created_at": newer_created_at,
+                "updated_at": older_updated_at,
+            },
+        )
+        session.commit()
+
+    with session_factory() as session:
+        sorted_asset_ids = {
+            sort: [item.asset_id for item in search_v2_assets(session, sort=sort).items]
+            for sort in (
+                "asset_id_asc",
+                "asset_id_desc",
+                "created_at_asc",
+                "created_at_desc",
+                "updated_at_asc",
+                "updated_at_desc",
+            )
+        }
+
+    assert sorted_asset_ids == {
+        "asset_id_asc": [ASSET_ID, ASSET_ID_2],
+        "asset_id_desc": [ASSET_ID_2, ASSET_ID],
+        "created_at_asc": [ASSET_ID, ASSET_ID_2],
+        "created_at_desc": [ASSET_ID_2, ASSET_ID],
+        "updated_at_asc": [ASSET_ID_2, ASSET_ID],
+        "updated_at_desc": [ASSET_ID, ASSET_ID_2],
+    }
+
+
 def test_v2_search_filters_are_case_insensitive(session_factory) -> None:
     with session_factory() as session:
         register_v2_asset(
