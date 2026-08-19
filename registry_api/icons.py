@@ -1076,6 +1076,12 @@ def icon_base64_from_asset(asset: Asset) -> str | None:
     return base64.b64encode(asset.icon.image_data).decode("ascii")
 
 
+# Icon rows carry raw PNG bytes, so this is deliberately smaller than the
+# listing batch. It is an execution option, not Result.yield_per(), so psycopg
+# opens a server-side cursor instead of buffering every icon in this process.
+ICON_STREAM_ROW_BATCH = 100
+
+
 def icon_map(db: Session) -> dict[str, str]:
     rows = db.execute(
         select(Asset.asset_id, AssetIconProposal.image_data)
@@ -1131,7 +1137,8 @@ def stream_icon_map_bytes(
                 AssetIconProposal.image_data.is_not(None),
             )
             .order_by(Asset.asset_id.asc())
-        ).yield_per(100)
+            .execution_options(yield_per=ICON_STREAM_ROW_BATCH)
+        )
         fallback_items = iter(sorted((fallback_icons or {}).items()))
         fallback_item = next(fallback_items, None)
         yield b"{"
