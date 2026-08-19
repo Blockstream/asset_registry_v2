@@ -37,6 +37,9 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 include = ["registry_api*"]
 
+[tool.setuptools.package-data]
+registry_api = ["data/*.png"]
+
 [project.optional-dependencies]
 dev = [
     "PyYAML==6.0.3",

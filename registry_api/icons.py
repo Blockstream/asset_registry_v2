@@ -6,8 +6,10 @@ import hashlib
 import io
 import math
 import uuid
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from datetime import UTC, datetime, timedelta
+from functools import lru_cache
+from importlib.resources import files
 from typing import Literal
 
 from PIL import Image, UnidentifiedImageError
@@ -32,7 +34,12 @@ from registry_api.admin_actions import (
 )
 from registry_api.audit import audit_entry_from_row
 from registry_api.canonical_json import canonical_json_bytes, require_canonical_json
-from registry_api.constants import Actor, IconProposalStatus, Operation
+from registry_api.constants import (
+    Actor,
+    IconProposalStatus,
+    LIQUID_MAINNET_POLICY_ASSET_ID,
+    Operation,
+)
 from registry_api.errors import ErrorCode, RegistryError, clean_pydantic_errors
 from registry_api.issuer_actions import (
     _check_freshness,
@@ -1090,7 +1097,24 @@ def icon_map(db: Session) -> dict[str, str]:
     }
 
 
-def stream_icon_map_bytes() -> Iterator[bytes]:
+@lru_cache(maxsize=1)
+def liquid_mainnet_policy_asset_icon_base64() -> str:
+    """Load and validate the packaged compatibility icon once per process."""
+    image_data = files("registry_api").joinpath("data", "lbtc-icon.png").read_bytes()
+    if len(image_data) > MAX_STORED_ICON_BYTES:
+        raise RuntimeError("bundled Liquid policy asset icon is too large")
+    try:
+        image = _verified_png(image_data)
+    except RegistryError as exc:
+        raise RuntimeError("bundled Liquid policy asset icon is invalid") from exc
+    image.close()
+    return base64.b64encode(image_data).decode("ascii")
+
+
+def stream_icon_map_bytes(
+    *, fallback_icons: Mapping[str, str] | None = None
+) -> Iterator[bytes]:
+    """Stream approved icons plus ordered fallbacks, preferring database rows."""
     from registry_api.db import SessionLocal
 
     with SessionLocal() as db:
@@ -1108,17 +1132,47 @@ def stream_icon_map_bytes() -> Iterator[bytes]:
             )
             .order_by(Asset.asset_id.asc())
         ).yield_per(100)
+        fallback_items = iter(sorted((fallback_icons or {}).items()))
+        fallback_item = next(fallback_items, None)
         yield b"{"
         first = True
         for asset_id, image_data in rows:
-            if first:
+            while fallback_item is not None and fallback_item[0] < asset_id:
+                yield from _stream_icon_map_entry(
+                    fallback_item[0], fallback_item[1], first=first
+                )
                 first = False
-            else:
-                yield b","
-            yield to_json(asset_id)
-            yield b":"
-            yield to_json(base64.b64encode(image_data).decode("ascii"))
+                fallback_item = next(fallback_items, None)
+            if fallback_item is not None and fallback_item[0] == asset_id:
+                fallback_item = next(fallback_items, None)
+            yield from _stream_icon_map_entry(
+                asset_id,
+                base64.b64encode(image_data).decode("ascii"),
+                first=first,
+            )
+            first = False
+        while fallback_item is not None:
+            yield from _stream_icon_map_entry(
+                fallback_item[0], fallback_item[1], first=first
+            )
+            first = False
+            fallback_item = next(fallback_items, None)
         yield b"}"
+
+
+def liquid_mainnet_policy_asset_icon_fallback() -> dict[str, str]:
+    """Return the removable /icons.json fallback for Liquid's policy asset."""
+    return {LIQUID_MAINNET_POLICY_ASSET_ID: liquid_mainnet_policy_asset_icon_base64()}
+
+
+def _stream_icon_map_entry(
+    asset_id: str, encoded: str, *, first: bool
+) -> Iterator[bytes]:
+    if not first:
+        yield b","
+    yield to_json(asset_id)
+    yield b":"
+    yield to_json(encoded)
 
 
 def _decode_canonical_base64(encoded: str) -> bytes:
