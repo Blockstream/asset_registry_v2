@@ -19,6 +19,12 @@ from registry_api.models import (
 )
 
 STREAM_CHUNK_SIZE_BYTES = 256 * 1024
+# Passed as an execution option rather than Result.yield_per() so the psycopg
+# dialect opens a server-side cursor. Calling yield_per() on an already-executed
+# Result only paces how buffered rows are handed out: libpq has by then pulled
+# the whole listing into this process, so every in-flight request held a full
+# copy of the response in memory.
+STREAM_ROW_BATCH = 1000
 
 
 def refresh_asset_serialized_fragments(db: Session, asset: Asset) -> None:
@@ -97,7 +103,8 @@ def _legacy_all_json_chunks(db: Session) -> Iterator[tuple[str, str]]:
         )
         .where(Asset.status == "active")
         .order_by(Asset.asset_id.asc())
-    ).yield_per(1000)
+        .execution_options(yield_per=STREAM_ROW_BATCH)
+    )
 
     for asset_uuid, asset_id, fragment_json in rows:
         asset = _fresh_asset_by_uuid(db, asset_uuid) if fragment_json is None else None
@@ -126,7 +133,8 @@ def _v2_all_json_chunks(
     if not include_deregistered:
         query = query.where(Asset.status == "active")
 
-    for asset_uuid, asset_id, fragment_json in db.execute(query).yield_per(1000):
+    rows = db.execute(query.execution_options(yield_per=STREAM_ROW_BATCH))
+    for asset_uuid, asset_id, fragment_json in rows:
         asset = _fresh_asset_by_uuid(db, asset_uuid) if fragment_json is None else None
         yield asset_id, fragment_json or _json_text(_v2_asset_payload(db, asset))
 

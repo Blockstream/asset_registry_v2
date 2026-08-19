@@ -82,5 +82,7 @@ def test_database_policy_asset_icon_takes_precedence_and_preserves_order(
 def _stub_streamed_icon_rows(monkeypatch, rows: list[tuple[str, bytes]]) -> None:
     session = MagicMock()
     session.__enter__.return_value = session
-    session.execute.return_value.yield_per.return_value = iter(rows)
+    # The endpoint streams via a server-side cursor (yield_per is an execution
+    # option on the statement), so it iterates the Result that execute() returns.
+    session.execute.return_value = iter(rows)
     monkeypatch.setattr(db_module, "SessionLocal", lambda: session)
