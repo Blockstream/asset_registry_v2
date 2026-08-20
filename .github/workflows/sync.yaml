@@ -1,0 +1,23 @@
+name: Sync GitLab mirror
+
+# Nudge the pull mirror right after each push instead of waiting for its
+# scheduled sync. All connection details live in repository secrets.
+on: [push]
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger mirror pull
+        env:
+          GITLAB_HOSTNAME: ${{ secrets.GITLAB_HOSTNAME }}
+          GITLAB_PROJECT_ID: ${{ secrets.GITLAB_PROJECT_ID }}
+          GITLAB_MIRROR_TOKEN: ${{ secrets.GITLAB_MIRROR_TOKEN }}
+        run: |
+          if [ -z "$GITLAB_MIRROR_TOKEN" ]; then
+            echo "Mirror secrets are not configured; nothing to do."
+            exit 0
+          fi
+          curl --fail --silent --show-error --request POST \
+               --header "PRIVATE-TOKEN: $GITLAB_MIRROR_TOKEN" \
+               "https://$GITLAB_HOSTNAME/api/v4/projects/$GITLAB_PROJECT_ID/mirror/pull"
