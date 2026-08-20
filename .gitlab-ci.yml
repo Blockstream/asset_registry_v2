@@ -25,3 +25,60 @@ test:
     - if: '$TEST_DISABLED'
       when: never
     - if: '$CI_COMMIT_TAG || $CI_COMMIT_BRANCH'
+
+# Manual deployment triggers.
+#
+# The Auto DevOps `build` job pushes each master commit to
+# $CI_REGISTRY_IMAGE/master:$CI_APPLICATION_TAG. The two manual jobs below
+# promote that image, unchanged, to the staging or the prod registry path.
+# A master pipeline succeeds without them; a deployment is a deliberate click.
+.promote_image:
+  # `deploy` is declared by Auto-DevOps.gitlab-ci.yml.
+  stage: deploy
+  image:
+    # crane copies an image between registry paths without docker-in-docker.
+    name: gcr.io/go-containerregistry/crane:debug
+    entrypoint: [""]
+  variables:
+    GIT_STRATEGY: none
+  # Do not inherit the `build` dotenv artifact: it re-exports
+  # CI_APPLICATION_TAG as "<tag>@sha256:<digest>", which is not a pushable
+  # tag. `${VAR%%@*}` strips such a suffix defensively.
+  dependencies: []
+  script:
+    - TAG="${CI_APPLICATION_TAG%%@*}"
+    - test -n "$TAG" || { echo "CI_APPLICATION_TAG is not set on this project"; exit 1; }
+    - SOURCE_IMAGE="$CI_REGISTRY_IMAGE/$CI_COMMIT_REF_SLUG:$TAG"
+    - TARGET_IMAGE="$CI_REGISTRY_IMAGE/$CHANNEL:$TAG"
+    - crane auth login "$CI_REGISTRY" -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD"
+    - crane copy "$SOURCE_IMAGE" "$TARGET_IMAGE"
+    - echo "promoted $SOURCE_IMAGE to $TARGET_IMAGE"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "master"'
+      when: manual
+      # Non-blocking: `when: manual` inside `rules` is blocking by default.
+      allow_failure: true
+    - when: never
+
+deploy_staging:
+  extends: .promote_image
+  variables:
+    CHANNEL: staging
+
+deploy_prod:
+  extends: .promote_image
+  # Only one production promotion at a time; orders after staging and the
+  # earlier stages when they run in the same pipeline.
+  resource_group: prod_deployment_lock
+  needs:
+    - job: build
+      optional: true
+      artifacts: false
+    - job: test
+      optional: true
+      artifacts: false
+    - job: deploy_staging
+      optional: true
+      artifacts: false
+  variables:
+    CHANNEL: prod
