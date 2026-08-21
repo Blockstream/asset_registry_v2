@@ -648,8 +648,12 @@ paths:
         schema:
           enum:
           - asset_id_asc
+          - domain_asc
+          - domain_desc
           - name_asc
+          - name_desc
           - ticker_asc
+          - ticker_desc
           - created_at_desc
           - updated_at_desc
           type: string

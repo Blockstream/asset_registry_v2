@@ -337,6 +337,44 @@ def test_v2_lookup_search_filters_pagination_and_all_json(session_factory) -> No
     }
 
 
+def test_v2_search_sorts_text_fields_in_both_directions(session_factory) -> None:
+    with session_factory() as session:
+        register_v2_asset(session, v2_request())
+    with session_factory() as session:
+        register_v2_asset(
+            session,
+            v2_request(
+                asset_id=ASSET_ID_2,
+                pubkey=PUBKEY_2,
+                domain="issuer.example.com",
+                ticker="BONDY",
+                name="Bond Asset",
+            ),
+        )
+
+    with session_factory() as session:
+        sorted_asset_ids = {
+            sort: [item.asset_id for item in search_v2_assets(session, sort=sort).items]
+            for sort in (
+                "domain_asc",
+                "domain_desc",
+                "name_asc",
+                "name_desc",
+                "ticker_asc",
+                "ticker_desc",
+            )
+        }
+
+    assert sorted_asset_ids == {
+        "domain_asc": [ASSET_ID_2, ASSET_ID],
+        "domain_desc": [ASSET_ID, ASSET_ID_2],
+        "name_asc": [ASSET_ID_2, ASSET_ID],
+        "name_desc": [ASSET_ID, ASSET_ID_2],
+        "ticker_asc": [ASSET_ID_2, ASSET_ID],
+        "ticker_desc": [ASSET_ID, ASSET_ID_2],
+    }
+
+
 def test_v2_search_filters_are_case_insensitive(session_factory) -> None:
     with session_factory() as session:
         register_v2_asset(
