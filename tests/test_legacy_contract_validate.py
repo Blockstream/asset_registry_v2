@@ -32,6 +32,20 @@ def test_legacy_contract_validate_endpoint_accepts_matching_contract_hash() -> N
     assert response.headers["content-type"].startswith("text/plain")
 
 
+def test_legacy_contract_validate_endpoint_preserves_omitted_default_fields() -> None:
+    client = TestClient(create_app())
+    contract = legacy_contract()
+    del contract["precision"]
+
+    response = client.post(
+        "/contract/validate",
+        json={"contract": contract, "contract_hash": contract_hash(contract)},
+    )
+
+    assert response.status_code == 200
+    assert response.text == "valid"
+
+
 def test_legacy_contract_validate_endpoint_rejects_hash_mismatch() -> None:
     client = TestClient(create_app())
     contract = legacy_contract()

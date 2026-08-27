@@ -3,9 +3,12 @@ import os
 
 import pytest
 import wallycore as wally
+from pydantic import ValidationError
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
+from registry_api.canonical_json import contract_hash
+from registry_api.chain import derive_asset_id
 from registry_api.legacy_assets import get_legacy_asset
 from registry_api.legacy_import import (
     LegacyImportItem,
@@ -58,17 +61,19 @@ def legacy_listing_item(
     ticker: str | None = "LEGACY",
     name: str = "Legacy Import Asset",
 ) -> dict:
+    contract = {
+        "entity": {"domain": domain},
+        "issuer_pubkey": PUBKEY,
+        "name": name,
+        "precision": 0,
+        "version": 0,
+        "issuer_identifier": "issuer-123",
+    }
+    if ticker is not None:
+        contract["ticker"] = ticker
     return {
         "asset_id": asset_id,
-        "contract": {
-            "entity": {"domain": domain},
-            "issuer_pubkey": PUBKEY,
-            "name": name,
-            "precision": 0,
-            "ticker": ticker,
-            "version": 0,
-            "issuer_identifier": "issuer-123",
-        },
+        "contract": contract,
         "issuance_txin": {"txid": "00" * 32, "vin": 0},
         "issuance_prevout": {"txid": "11" * 32, "vout": 1},
         "version": 0,
@@ -81,33 +86,67 @@ def legacy_listing_item(
 
 
 def legacy_request(asset_id: str, *, domain: str = "legacy.example.com", ticker: str | None = "LEGACY") -> LegacyAssetRequest:
+    contract = {
+        "entity": {"domain": domain},
+        "issuer_pubkey": PUBKEY,
+        "name": "Existing Asset",
+        "precision": 0,
+        "version": 0,
+    }
+    if ticker is not None:
+        contract["ticker"] = ticker
     return LegacyAssetRequest.model_validate(
         {
             "asset_id": asset_id,
-            "contract": {
-                "entity": {"domain": domain},
-                "issuer_pubkey": PUBKEY,
-                "name": "Existing Asset",
-                "precision": 0,
-                "ticker": ticker,
-                "version": 0,
-            },
+            "contract": contract,
         }
     )
 
 
-def test_legacy_listing_item_can_fill_contract_from_top_level_fields() -> None:
+def test_legacy_listing_item_does_not_fill_contract_from_top_level_fields() -> None:
     item = legacy_listing_item(ASSET_ID)
-    del item["contract"]["issuer_pubkey"]
     del item["contract"]["ticker"]
 
-    request, response = legacy_request_from_listing_item(ASSET_ID, item)
+    request, response = legacy_request_from_listing_item(
+        ASSET_ID, item, verify_imported_contract_identity=False
+    )
 
     assert request.asset_id == ASSET_ID
     assert request.contract.issuer_pubkey == PUBKEY
-    assert request.contract.ticker == "LEGACY"
+    assert request.contract.ticker is None
     assert response["contract"]["issuer_pubkey"] == PUBKEY
-    assert response["contract"]["ticker"] == "LEGACY"
+    assert "ticker" not in response["contract"]
+    assert response["ticker"] == "LEGACY"
+
+
+@pytest.mark.parametrize("collection", [None, "Top-level collection"])
+def test_legacy_listing_item_does_not_fill_contract_collection_from_top_level(
+    collection: str | None,
+) -> None:
+    item = legacy_listing_item(ASSET_ID)
+    item["collection"] = collection
+
+    request, response = legacy_request_from_listing_item(
+        ASSET_ID, item, verify_imported_contract_identity=False
+    )
+
+    assert request.contract.collection is None
+    assert "collection" not in response["contract"]
+    assert response["collection"] == collection
+
+
+def test_legacy_listing_item_preserves_collection_present_in_contract() -> None:
+    item = legacy_listing_item(ASSET_ID)
+    item["collection"] = None
+    item["contract"]["collection"] = "Contract collection"
+
+    request, response = legacy_request_from_listing_item(
+        ASSET_ID, item, verify_imported_contract_identity=False
+    )
+
+    assert request.contract.collection == "Contract collection"
+    assert response["contract"]["collection"] == "Contract collection"
+    assert response["collection"] is None
 
 
 def test_legacy_listing_item_compresses_uncompressed_contract_issuer_pubkey() -> None:
@@ -115,23 +154,50 @@ def test_legacy_listing_item_compresses_uncompressed_contract_issuer_pubkey() ->
     item["contract"]["issuer_pubkey"] = UNCOMPRESSED_PUBKEY.upper()
     item["issuer_pubkey"] = UNCOMPRESSED_PUBKEY.upper()
 
-    request, response = legacy_request_from_listing_item(ASSET_ID, item)
+    request, response = legacy_request_from_listing_item(
+        ASSET_ID, item, verify_imported_contract_identity=False
+    )
 
     assert request.contract.issuer_pubkey == PUBKEY
-    assert response["contract"]["issuer_pubkey"] == PUBKEY
-    assert response["issuer_pubkey"] == PUBKEY
+    assert response["contract"]["issuer_pubkey"] == UNCOMPRESSED_PUBKEY.upper()
+    assert response["issuer_pubkey"] == UNCOMPRESSED_PUBKEY.upper()
 
 
-def test_legacy_listing_item_compresses_top_level_issuer_pubkey_fallback() -> None:
+def test_legacy_listing_item_rejects_top_level_issuer_pubkey_fallback() -> None:
     item = legacy_listing_item(ASSET_ID)
     del item["contract"]["issuer_pubkey"]
     item["issuer_pubkey"] = UNCOMPRESSED_PUBKEY
 
-    request, response = legacy_request_from_listing_item(ASSET_ID, item)
+    with pytest.raises(ValidationError, match="issuer_pubkey"):
+        legacy_request_from_listing_item(
+            ASSET_ID, item, verify_imported_contract_identity=False
+        )
 
-    assert request.contract.issuer_pubkey == PUBKEY
-    assert response["contract"]["issuer_pubkey"] == PUBKEY
-    assert response["issuer_pubkey"] == PUBKEY
+
+def test_legacy_listing_item_verifies_registered_contract_identity() -> None:
+    item = legacy_listing_item(ASSET_ID)
+    item["collection"] = None
+    prevout = item["issuance_prevout"]
+    asset_id = derive_asset_id(
+        prevout["txid"],
+        prevout["vout"],
+        contract_hash(item["contract"]),
+    )
+    item["asset_id"] = asset_id
+
+    request, response = legacy_request_from_listing_item(asset_id, item)
+
+    assert request.asset_id == asset_id
+    assert "collection" not in response["contract"]
+
+
+def test_legacy_listing_item_rejects_contract_that_does_not_derive_asset_id() -> None:
+    item = legacy_listing_item(ASSET_ID)
+
+    with pytest.raises(
+        ValueError, match="legacy asset contract does not derive the listed asset_id"
+    ):
+        legacy_request_from_listing_item(ASSET_ID, item)
 
 
 def test_import_legacy_assets_logs_progress_and_delays_every_interval(caplog) -> None:
@@ -145,6 +211,7 @@ def test_import_legacy_assets_logs_progress_and_delays_every_interval(caplog) ->
             progress_interval=2,
             delay_seconds=1.25,
             sleep=delays.append,
+            verify_imported_contract_identity=False,
         )
 
     assert summary.total == 3
@@ -185,17 +252,27 @@ def test_import_legacy_assets_imports_and_preserves_listing_payload(session_fact
     payload = {ASSET_ID: legacy_listing_item(ASSET_ID)}
 
     with session_factory() as session:
-        summary = import_legacy_assets(session, payload)
+        summary = import_legacy_assets(
+            session, payload, verify_imported_contract_identity=False
+        )
 
     assert summary.total == 1
     assert summary.imported == 1
 
     with session_factory() as session:
         imported = get_legacy_asset(session, ASSET_ID)
+        stored_contract_hash = session.execute(
+            text(
+                "select action->>'contract_hash' from actions "
+                "where operation = 'legacy_register'"
+            )
+        ).scalar_one()
 
     assert imported["asset_id"] == ASSET_ID
     assert imported["issuance_txin"] == {"txid": "00" * 32, "vin": 0}
     assert imported["contract"]["issuer_identifier"] == "issuer-123"
+    assert imported["contract"] == payload[ASSET_ID]["contract"]
+    assert stored_contract_hash == contract_hash(payload[ASSET_ID]["contract"])
 
 
 def test_import_legacy_assets_allows_same_domain_with_null_tickers(session_factory) -> None:
@@ -215,7 +292,9 @@ def test_import_legacy_assets_allows_same_domain_with_null_tickers(session_facto
     }
 
     with session_factory() as session:
-        summary = import_legacy_assets(session, payload)
+        summary = import_legacy_assets(
+            session, payload, verify_imported_contract_identity=False
+        )
 
     assert summary.total == 2
     assert summary.imported == 2
@@ -245,7 +324,9 @@ def test_import_legacy_assets_dry_run_counts_would_import_without_writing(sessio
     payload = {ASSET_ID: legacy_listing_item(ASSET_ID)}
 
     with session_factory() as session:
-        summary = import_legacy_assets(session, payload, dry_run=True)
+        summary = import_legacy_assets(
+            session, payload, dry_run=True, verify_imported_contract_identity=False
+        )
         asset_count = session.execute(text("select count(*) from assets")).scalar_one()
 
     assert summary.total == 1
@@ -265,6 +346,7 @@ def test_import_legacy_assets_skips_existing_asset_id_and_namespace_conflict(ses
                 ASSET_ID: legacy_listing_item(ASSET_ID, domain="new.example.com", ticker="NEW"),
                 ASSET_ID_3: legacy_listing_item(ASSET_ID_3, domain="taken.example.com", ticker="TAKEN"),
             },
+            verify_imported_contract_identity=False,
         )
 
     assert summary.total == 2

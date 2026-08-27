@@ -26,7 +26,7 @@ def command_from_legacy_registration(request: LegacyAssetRequest) -> RegisterAss
     method = request.domain_verification_method or "http"
     return RegisterAssetCommand(
         asset_id=request.asset_id,
-        contract=request.contract.model_dump(exclude_none=True),
+        contract=request.contract.model_dump(exclude_unset=True),
         contract_version=request.contract.version,
         domain=request.contract.entity.domain,
         name=request.contract.name,

@@ -22,3 +22,23 @@ def test_legacy_registration_command_preserves_missing_ticker_as_none() -> None:
     command = command_from_legacy_registration(request)
 
     assert command.ticker is None
+    assert "ticker" not in command.contract
+
+
+def test_legacy_registration_command_preserves_omitted_default_field() -> None:
+    request = LegacyAssetRequest.model_validate(
+        {
+            "asset_id": "ac909f1b00000000000000000000000000000000000000000000000000000000",
+            "contract": {
+                "entity": {"domain": "proof.example.com"},
+                "issuer_pubkey": PUBKEY,
+                "name": "Default precision asset",
+                "version": 0,
+            },
+        }
+    )
+
+    command = command_from_legacy_registration(request)
+
+    assert command.precision == 0
+    assert "precision" not in command.contract

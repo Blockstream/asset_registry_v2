@@ -20,7 +20,7 @@ TESTNET_LEGACY_UNCOMPRESSED_ISSUER_PUBKEYS = {
 
 
 def legacy_registration_response(request: LegacyAssetRequest) -> dict[str, Any]:
-    contract = request.contract.model_dump(exclude_none=True)
+    contract = request.contract.model_dump(exclude_unset=True)
     response = {
         "asset_id": request.asset_id,
         "contract": contract,

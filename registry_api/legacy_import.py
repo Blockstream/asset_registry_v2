@@ -15,6 +15,8 @@ from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from registry_api.canonical_json import contract_hash
+from registry_api.chain import derive_asset_id
 from registry_api.db import SessionLocal
 from registry_api.errors import ErrorCode, RegistryError
 from registry_api.models import Asset
@@ -89,6 +91,7 @@ def import_legacy_assets(
     progress_interval: int = DEFAULT_PROGRESS_INTERVAL,
     delay_seconds: float = DEFAULT_DELAY_SECONDS,
     sleep: Callable[[float], None] = time.sleep,
+    verify_imported_contract_identity: bool = True,
 ) -> LegacyImportSummary:
     summary = LegacyImportSummary(total=len(payload))
     logger.info(
@@ -101,7 +104,11 @@ def import_legacy_assets(
 
     for processed, (key, value) in enumerate(payload.items(), start=1):
         try:
-            request, registered_response = legacy_request_from_listing_item(key, value)
+            request, registered_response = legacy_request_from_listing_item(
+                key,
+                value,
+                verify_imported_contract_identity=verify_imported_contract_identity,
+            )
         except (TypeError, ValueError, ValidationError) as exc:
             summary.add(LegacyImportItem(str(key), "invalid", str(exc)))
             _log_progress_if_needed(summary, processed, progress_interval)
@@ -141,6 +148,7 @@ def import_legacy_assets(
                 enforce_chain_verification=False,
                 enforce_domain_verification=False,
                 make_response=lambda _request, response=registered_response: response,
+                registration_contract=registered_response["contract"],
             )
         except RegistryError as exc:
             if exc.error == ErrorCode.ASSET_CONFLICT:
@@ -200,39 +208,37 @@ def _delay_if_needed(
     sleep(delay_seconds)
 
 
-def legacy_request_from_listing_item(asset_id_key: str, value: Any) -> tuple[LegacyAssetRequest, dict[str, Any]]:
+def legacy_request_from_listing_item(
+    asset_id_key: str,
+    value: Any,
+    *,
+    verify_imported_contract_identity: bool = True,
+) -> tuple[LegacyAssetRequest, dict[str, Any]]:
     if not isinstance(value, dict):
         raise TypeError("legacy asset entry must be an object")
 
-    response = deepcopy(value)
-    asset_id = response.get("asset_id", asset_id_key)
+    imported_item = deepcopy(value)
+    asset_id = imported_item.get("asset_id", asset_id_key)
     if not isinstance(asset_id, str):
         raise TypeError("legacy asset entry asset_id must be a string")
 
     normalized_asset_id = normalize_asset_id(asset_id)
-    if str(asset_id_key) != normalized_asset_id and response.get("asset_id") is not None:
+    if str(asset_id_key) != normalized_asset_id and imported_item.get("asset_id") is not None:
         normalized_key = normalize_asset_id(str(asset_id_key))
         if normalized_key != normalized_asset_id:
             raise ValueError("legacy asset entry key does not match nested asset_id")
 
-    response["asset_id"] = normalized_asset_id
-    contract = response.get("contract")
+    imported_item["asset_id"] = normalized_asset_id
+    contract = imported_item.get("contract")
     if not isinstance(contract, dict):
         raise TypeError("legacy asset entry contract must be an object")
-    response["contract"] = _contract_with_legacy_fallbacks(response, contract)
-    _compress_legacy_issuer_pubkeys(response)
+    if verify_imported_contract_identity:
+        _verify_imported_contract_identity(imported_item)
 
-    request = LegacyAssetRequest.model_validate(response)
-    registered_response = deepcopy(response)
+    registered_response = deepcopy(imported_item)
+    _compress_legacy_issuer_pubkeys(imported_item)
+    request = LegacyAssetRequest.model_validate(imported_item)
     return request, registered_response
-
-
-def _contract_with_legacy_fallbacks(response: dict[str, Any], contract: dict[str, Any]) -> dict[str, Any]:
-    normalized = deepcopy(contract)
-    for field_name in ("entity", "issuer_pubkey", "name", "ticker", "collection", "precision", "version"):
-        if field_name not in normalized and field_name in response:
-            normalized[field_name] = deepcopy(response[field_name])
-    return normalized
 
 
 def _compress_legacy_issuer_pubkeys(response: dict[str, Any]) -> None:
@@ -263,6 +269,27 @@ def _compressed_pubkey(pubkey: Any) -> str:
         wally.ec_public_key_verify(compressed)
         return compressed.hex()
     raise ValueError("issuer_pubkey must be a compressed or uncompressed secp256k1 public key")
+
+
+def _verify_imported_contract_identity(imported_item: dict[str, Any]) -> None:
+    asset_id = imported_item["asset_id"]
+    contract = imported_item["contract"]
+    issuance_prevout = imported_item.get("issuance_prevout")
+    if not isinstance(issuance_prevout, dict):
+        raise TypeError("legacy asset entry issuance_prevout must be an object")
+
+    prevout_txid = issuance_prevout.get("txid")
+    prevout_vout = issuance_prevout.get("vout")
+    if not isinstance(prevout_txid, str) or type(prevout_vout) is not int:
+        raise ValueError("legacy asset entry issuance_prevout must contain txid and vout")
+
+    derived_asset_id = derive_asset_id(
+        prevout_txid,
+        prevout_vout,
+        contract_hash(contract),
+    )
+    if derived_asset_id != asset_id:
+        raise ValueError("legacy asset contract does not derive the listed asset_id")
 
 
 def _asset_id_exists(db: Session, asset_id: str) -> bool:
