@@ -3,7 +3,14 @@ from datetime import datetime
 from json import dumps
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 from pydantic_core import PydanticCustomError
 from typing_extensions import TypeAliasType
 
@@ -111,6 +118,15 @@ LegacyExtraValue = TypeAliasType(
     | list["LegacyExtraValue"]
     | dict[NoNulString, "LegacyExtraValue"],
 )
+LegacyContractExtraValue = TypeAliasType(
+    "LegacyContractExtraValue",
+    NoNulString
+    | int
+    | float
+    | bool
+    | list["LegacyContractExtraValue"]
+    | dict[NoNulString, "LegacyContractExtraValue"],
+)
 MAX_CUSTOM_FIELDS = 32
 MAX_CUSTOM_KEY_LENGTH = 64
 MAX_CUSTOM_VALUE_BYTES = 2048
@@ -189,13 +205,23 @@ class LegacyContractEntity(StrictModel):
         return normalize_domain(value)
 
 
+def _reject_legacy_contract_null(value: Any) -> Any:
+    if value is None:
+        raise PydanticCustomError(
+            "legacy_contract_null",
+            "legacy contract values must not be null",
+        )
+    return value
+
+
 class LegacyContractMetadata(BaseModel):
     model_config = ConfigDict(
         extra="allow",
         json_schema_extra={
             "description": (
                 "Legacy version 0 contract metadata. Arbitrary extra fields are allowed for v1 compatibility, "
-                "but the canonical serialized contract object is limited to 4096 bytes by default. "
+                "but null-valued fields are not accepted and the canonical serialized contract object is limited "
+                "to 4096 bytes by default. "
                 "This can be changed with ASSET_REGISTRY_LEGACY_CONTRACT_MAX_BYTES."
             ),
             "propertyNames": {"pattern": r"^[^\x00]*$"},
@@ -205,11 +231,23 @@ class LegacyContractMetadata(BaseModel):
     version: Literal[0]
     issuer_pubkey: Pubkey
     name: AsciiName
-    ticker: LegacyTicker | None = None
-    collection: AsciiName | None = None
+    ticker: Annotated[
+        LegacyTicker | None,
+        BeforeValidator(
+            _reject_legacy_contract_null,
+            json_schema_input_type=LegacyTicker,
+        ),
+    ] = None
+    collection: Annotated[
+        AsciiName | None,
+        BeforeValidator(
+            _reject_legacy_contract_null,
+            json_schema_input_type=AsciiName,
+        ),
+    ] = None
     precision: int = Field(default=0, ge=0, le=8)
     entity: LegacyContractEntity
-    __pydantic_extra__: dict[str, LegacyExtraValue] = Field(init=False)
+    __pydantic_extra__: dict[str, LegacyContractExtraValue] = Field(init=False)
 
     @field_validator("version")
     @classmethod
@@ -242,7 +280,7 @@ class LegacyContractMetadata(BaseModel):
     def validate_legacy_contract_extra_size(self) -> "LegacyContractMetadata":
         _validate_extra_object(self.model_extra or {}, "legacy contract")
         _validate_serialized_size(
-            self.model_dump(mode="json", exclude_none=True),
+            self.model_dump(mode="json", exclude_unset=True),
             _legacy_contract_max_bytes(),
             "legacy contract",
         )
@@ -297,10 +335,19 @@ class ContractMetadataResponse(BaseModel):
     entity: ContractEntity
     name: str = Field(min_length=1, max_length=255)
     precision: int = Field(ge=0, le=18)
-    ticker: str | None = Field(default=None, min_length=1, max_length=24)
+    ticker: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=24,
+        exclude_if=lambda value: value is None,
+    )
     version: int = Field(ge=0)
-    initial_issuer_pubkey: Pubkey | None = None
-    issuer_pubkey: Pubkey | None = None
+    initial_issuer_pubkey: Pubkey | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    issuer_pubkey: Pubkey | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
     @field_validator("name")
     @classmethod

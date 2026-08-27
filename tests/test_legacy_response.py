@@ -40,3 +40,32 @@ def test_testnet_legacy_response_restores_uncompressed_contract_pubkey_for_hash_
 
     assert response["contract"]["issuer_pubkey"] == UNCOMPRESSED_PUBKEY
     assert response["issuer_pubkey"] == UNCOMPRESSED_PUBKEY
+
+
+def test_registered_response_preserves_explicit_null_contract_collection() -> None:
+    asset = Asset(asset_id="ab" * 32)
+    registered_response = {
+        "asset_id": asset.asset_id,
+        "collection": None,
+        "contract": {"name": "No collection", "collection": None},
+    }
+
+    response = legacy_response_from_asset(asset, registered_response)
+
+    assert response["collection"] is None
+    assert response["contract"]["collection"] is None
+    assert registered_response["contract"]["collection"] is None
+
+
+def test_registered_response_preserves_contract_collection_value() -> None:
+    asset = Asset(asset_id="ac" * 32)
+    registered_response = {
+        "asset_id": asset.asset_id,
+        "collection": "Contract collection",
+        "contract": {"name": "Collected", "collection": "Contract collection"},
+    }
+
+    response = legacy_response_from_asset(asset, registered_response)
+
+    assert response["collection"] == "Contract collection"
+    assert response["contract"]["collection"] == "Contract collection"

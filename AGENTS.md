@@ -381,8 +381,12 @@ After changing routes, request/response models, examples, or OpenAPI metadata, r
 
 ```bash
 .venv/bin/python scripts/generate_openapi.py
+(cd sdk && npm run generate:types)
 .venv/bin/python scripts/generate_openapi.py --check
+(cd sdk && npm run check:types)
 ```
+
+Always regenerate and commit both `openapi.yaml` and `sdk/src/generated/openapi.d.ts` when the API specification changes.
 
 `tests/test_openapi_alignment.py` compares the tracked snapshot with `create_app().openapi()` and verifies stable operation IDs and examples. Service design notes live in `ARCHITECTURE.md`.
 

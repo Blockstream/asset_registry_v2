@@ -180,7 +180,7 @@ def get_icons_legacy(
 )
 def validate_contract_legacy(request: LegacyContractValidationRequest) -> Response:
     """Validate legacy version 0 contract metadata against its supplied contract hash."""
-    contract = request.contract.model_dump(mode="json", exclude_none=True)
+    contract = request.contract.model_dump(mode="json", exclude_unset=True)
     expected_hash = contract_hash(contract)
     if expected_hash != request.contract_hash:
         raise RegistryError(

@@ -1008,9 +1008,9 @@ export interface components {
                 /** Name */
                 name: string;
                 /** Ticker */
-                ticker?: string | null;
+                ticker?: string;
                 /** Collection */
-                collection?: string | null;
+                collection?: string;
                 /**
                  * Precision
                  * @default 0
@@ -1018,7 +1018,7 @@ export interface components {
                 precision: number;
                 entity: components["schemas"]["LegacyContractEntity"];
             } & {
-                [key: string]: components["schemas"]["LegacyExtraValue-Input"];
+                [key: string]: components["schemas"]["LegacyContractExtraValue"];
             };
             /**
              * Domain Verification Method
@@ -1033,9 +1033,12 @@ export interface components {
             /** Domain */
             domain: string;
         };
+        LegacyContractExtraValue: string | number | boolean | components["schemas"]["LegacyContractExtraValue"][] | {
+            [key: string]: components["schemas"]["LegacyContractExtraValue"];
+        };
         /**
          * LegacyContractMetadata
-         * @description Legacy version 0 contract metadata. Arbitrary extra fields are allowed for v1 compatibility, but the canonical serialized contract object is limited to 4096 bytes by default. This can be changed with ASSET_REGISTRY_LEGACY_CONTRACT_MAX_BYTES.
+         * @description Legacy version 0 contract metadata. Arbitrary extra fields are allowed for v1 compatibility, but null-valued fields are not accepted and the canonical serialized contract object is limited to 4096 bytes by default. This can be changed with ASSET_REGISTRY_LEGACY_CONTRACT_MAX_BYTES.
          */
         LegacyContractMetadata: {
             /**
@@ -1048,9 +1051,9 @@ export interface components {
             /** Name */
             name: string;
             /** Ticker */
-            ticker?: string | null;
+            ticker?: string;
             /** Collection */
-            collection?: string | null;
+            collection?: string;
             /**
              * Precision
              * @default 0
@@ -1058,7 +1061,7 @@ export interface components {
             precision: number;
             entity: components["schemas"]["LegacyContractEntity"];
         } & {
-            [key: string]: components["schemas"]["LegacyExtraValue-Input"];
+            [key: string]: components["schemas"]["LegacyContractExtraValue"];
         };
         /** LegacyContractValidationRequest */
         LegacyContractValidationRequest: {
@@ -1077,9 +1080,9 @@ export interface components {
                 /** Name */
                 name: string;
                 /** Ticker */
-                ticker?: string | null;
+                ticker?: string;
                 /** Collection */
-                collection?: string | null;
+                collection?: string;
                 /**
                  * Precision
                  * @default 0
@@ -1087,7 +1090,7 @@ export interface components {
                 precision: number;
                 entity: components["schemas"]["LegacyContractEntity"];
             } & {
-                [key: string]: components["schemas"]["LegacyExtraValue-Input"];
+                [key: string]: components["schemas"]["LegacyContractExtraValue"];
             };
             /** Contract Hash */
             contract_hash: string;

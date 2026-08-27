@@ -26,10 +26,9 @@ def contract_extra_fields_from_legacy_request(
     request: LegacyAssetRequest,
 ) -> dict[str, Any]:
     extra_fields = _filtered_extra_fields(
-        request.contract.model_extra or {}, KNOWN_LEGACY_CONTRACT_FIELDS
+        request.contract.model_dump(exclude_unset=True),
+        KNOWN_LEGACY_CONTRACT_FIELDS,
     )
-    if request.contract.collection is not None:
-        extra_fields["collection"] = request.contract.collection
     return dict(sorted(extra_fields.items()))
 
 

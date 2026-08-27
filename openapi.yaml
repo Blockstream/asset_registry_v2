@@ -3597,20 +3597,16 @@ components:
               pattern: ^[\x01-\x7f]+$
               title: Name
             ticker:
-              anyOf:
-              - type: string
-                maxLength: 24
-                minLength: 3
-                pattern: ^[A-Za-z0-9.\-]+$
-              - type: 'null'
+              type: string
+              maxLength: 24
+              minLength: 3
+              pattern: ^[A-Za-z0-9.\-]+$
               title: Ticker
             collection:
-              anyOf:
-              - type: string
-                maxLength: 255
-                minLength: 1
-                pattern: ^[\x01-\x7f]+$
-              - type: 'null'
+              type: string
+              maxLength: 255
+              minLength: 1
+              pattern: ^[\x01-\x7f]+$
               title: Collection
             precision:
               type: integer
@@ -3621,7 +3617,7 @@ components:
             entity:
               $ref: '#/components/schemas/LegacyContractEntity'
           additionalProperties:
-            $ref: '#/components/schemas/LegacyExtraValue-Input'
+            $ref: '#/components/schemas/LegacyContractExtraValue'
           propertyNames:
             pattern: ^[^\x00]*$
           type: object
@@ -3665,6 +3661,21 @@ components:
       required:
       - domain
       title: LegacyContractEntity
+    LegacyContractExtraValue:
+      anyOf:
+      - type: string
+        pattern: ^[^\x00]*$
+      - type: integer
+      - type: number
+      - type: boolean
+      - items:
+          $ref: '#/components/schemas/LegacyContractExtraValue'
+        type: array
+      - patternProperties:
+          ^[^\x00]*$:
+            $ref: '#/components/schemas/LegacyContractExtraValue'
+        type: object
+        additionalProperties: false
     LegacyContractMetadata:
       properties:
         version:
@@ -3684,20 +3695,16 @@ components:
           pattern: ^[\x01-\x7f]+$
           title: Name
         ticker:
-          anyOf:
-          - type: string
-            maxLength: 24
-            minLength: 3
-            pattern: ^[A-Za-z0-9.\-]+$
-          - type: 'null'
+          type: string
+          maxLength: 24
+          minLength: 3
+          pattern: ^[A-Za-z0-9.\-]+$
           title: Ticker
         collection:
-          anyOf:
-          - type: string
-            maxLength: 255
-            minLength: 1
-            pattern: ^[\x01-\x7f]+$
-          - type: 'null'
+          type: string
+          maxLength: 255
+          minLength: 1
+          pattern: ^[\x01-\x7f]+$
           title: Collection
         precision:
           type: integer
@@ -3708,7 +3715,7 @@ components:
         entity:
           $ref: '#/components/schemas/LegacyContractEntity'
       additionalProperties:
-        $ref: '#/components/schemas/LegacyExtraValue-Input'
+        $ref: '#/components/schemas/LegacyContractExtraValue'
       propertyNames:
         pattern: ^[^\x00]*$
       type: object
@@ -3718,8 +3725,9 @@ components:
       - name
       - entity
       title: LegacyContractMetadata
-      description: Legacy version 0 contract metadata. Arbitrary extra fields are allowed for v1 compatibility, but the canonical
-        serialized contract object is limited to 4096 bytes by default. This can be changed with ASSET_REGISTRY_LEGACY_CONTRACT_MAX_BYTES.
+      description: Legacy version 0 contract metadata. Arbitrary extra fields are allowed for v1 compatibility, but null-valued
+        fields are not accepted and the canonical serialized contract object is limited to 4096 bytes by default. This can
+        be changed with ASSET_REGISTRY_LEGACY_CONTRACT_MAX_BYTES.
     LegacyContractValidationRequest:
       properties:
         contract:
@@ -3741,20 +3749,16 @@ components:
               pattern: ^[\x01-\x7f]+$
               title: Name
             ticker:
-              anyOf:
-              - type: string
-                maxLength: 24
-                minLength: 3
-                pattern: ^[A-Za-z0-9.\-]+$
-              - type: 'null'
+              type: string
+              maxLength: 24
+              minLength: 3
+              pattern: ^[A-Za-z0-9.\-]+$
               title: Ticker
             collection:
-              anyOf:
-              - type: string
-                maxLength: 255
-                minLength: 1
-                pattern: ^[\x01-\x7f]+$
-              - type: 'null'
+              type: string
+              maxLength: 255
+              minLength: 1
+              pattern: ^[\x01-\x7f]+$
               title: Collection
             precision:
               type: integer
@@ -3765,7 +3769,7 @@ components:
             entity:
               $ref: '#/components/schemas/LegacyContractEntity'
           additionalProperties:
-            $ref: '#/components/schemas/LegacyExtraValue-Input'
+            $ref: '#/components/schemas/LegacyContractExtraValue'
           propertyNames:
             pattern: ^[^\x00]*$
           type: object

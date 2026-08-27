@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from copy import deepcopy
 from typing import Any
 
 from sqlalchemy.exc import IntegrityError
@@ -33,10 +34,14 @@ def register_legacy_asset(
     fetch_text: HttpTextFetcher | None = None,
     resolve_txt: TxtResolver | None = None,
     make_response: Callable[[LegacyAssetRequest], dict[str, Any]] = legacy_registration_response,
+    registration_contract: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     command = command_from_legacy_registration(request)
     method = command.domain_verification_method
-    hash_hex = contract_hash(request.contract.model_dump(exclude_none=True))
+    registered_contract = deepcopy(
+        registration_contract if registration_contract is not None else command.contract
+    )
+    hash_hex = contract_hash(registered_contract)
 
     _chain_verifier(enforce_chain_verification, chain_verifier).verify_issuance_commitment(
         IssuanceCommitment(asset_id=request.asset_id, contract_hash=hash_hex)
@@ -50,7 +55,8 @@ def register_legacy_asset(
             resolve_txt=resolve_txt,
         )
 
-    response = make_response(request)
+    response = dict(make_response(request))
+    response["contract"] = deepcopy(registered_contract)
 
     asset = new_registered_asset(command)
 

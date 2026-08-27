@@ -7,6 +7,7 @@ import wallycore as wally
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
+from registry_api.canonical_json import contract_hash
 from registry_api.errors import RegistryError
 from registry_api.legacy_assets import deregister_legacy_asset, get_legacy_asset, list_legacy_assets, list_legacy_assets_json_bytes
 from registry_api.migration import migrate_legacy_asset_to_v2
@@ -54,17 +55,19 @@ def cleanup_database(engine) -> None:
 
 
 def legacy_request(asset_id: str = ASSET_ID, ticker: str | None = "LEGACY", pubkey: str = PUBKEY) -> LegacyAssetRequest:
+    contract = {
+        "entity": {"domain": "proof.example.com"},
+        "issuer_pubkey": pubkey,
+        "name": "Legacy Asset",
+        "precision": 0,
+        "version": 0,
+    }
+    if ticker is not None:
+        contract["ticker"] = ticker
     return LegacyAssetRequest.model_validate(
         {
             "asset_id": asset_id,
-            "contract": {
-                "entity": {"domain": "proof.example.com"},
-                "issuer_pubkey": pubkey,
-                "name": "Legacy Asset",
-                "precision": 0,
-                "ticker": ticker,
-                "version": 0,
-            },
+            "contract": contract,
             "domain_verification_method": "http",
         }
     )
@@ -139,6 +142,9 @@ def test_legacy_registration_inserts_asset_defaults_and_action(session_factory) 
     assert row["status"] == "active"
     assert row["operation"] == "legacy_register"
     assert row["history_pubkey"] == PUBKEY
+    assert row["action"]["contract_hash"] == contract_hash(
+        row["action"]["request"]["contract"]
+    )
 
 
 def test_legacy_registration_rejects_duplicate_active_asset(session_factory) -> None:

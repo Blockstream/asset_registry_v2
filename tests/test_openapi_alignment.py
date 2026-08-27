@@ -195,8 +195,12 @@ def test_legacy_contract_request_schemas_keep_declared_field_constraints_inline(
         assert contract["properties"]["issuer_pubkey"]["minLength"] == 66
         assert contract["properties"]["issuer_pubkey"]["maxLength"] == 66
         assert contract["additionalProperties"] == {
-            "$ref": "#/components/schemas/LegacyExtraValue-Input"
+            "$ref": "#/components/schemas/LegacyContractExtraValue"
         }
+        assert contract["properties"]["ticker"]["type"] == "string"
+        assert contract["properties"]["collection"]["type"] == "string"
+
+    assert {"type": "null"} not in schemas["LegacyContractExtraValue"]["anyOf"]
 
 
 def test_fastapi_openapi_exposes_implemented_admin_and_audit_routes() -> None:

@@ -768,11 +768,7 @@ def _icon_descriptor_from_asset(asset: Asset) -> AssetIconDescriptor | None:
 
 
 def _contract_payload(asset: Asset) -> dict[str, Any]:
-    contract = contract_from_asset(asset)
-    contract.setdefault("ticker", None)
-    contract.setdefault("initial_issuer_pubkey", None)
-    contract.setdefault("issuer_pubkey", None)
-    return contract
+    return contract_from_asset(asset)
 
 
 def _admin_annotations_payload(

@@ -121,6 +121,24 @@ def test_contract_metadata_response_allows_short_v2_ticker() -> None:
     assert response.ticker == "A"
 
 
+def test_contract_metadata_response_omits_absent_optional_contract_fields() -> None:
+    response = ContractMetadataResponse.model_validate(
+        {
+            "entity": {"domain": "proof.example.com"},
+            "name": "Untickered legacy asset",
+            "precision": 0,
+            "version": 0,
+            "issuer_pubkey": PUBKEY,
+        }
+    )
+
+    serialized = response.model_dump(mode="json")
+
+    assert "ticker" not in serialized
+    assert "initial_issuer_pubkey" not in serialized
+    assert serialized["issuer_pubkey"] == PUBKEY.lower()
+
+
 def test_register_asset_request_rejects_v2_contract_name_with_only_spaces() -> None:
     with pytest.raises(ValidationError, match="name must not be only whitespace"):
         RegisterAssetRequest.model_validate(
@@ -154,6 +172,36 @@ def test_legacy_asset_request_allows_contract_name_with_only_spaces() -> None:
     )
 
     assert request.contract.name == "   "
+
+
+@pytest.mark.parametrize(
+    "null_field",
+    [
+        {"ticker": None},
+        {"collection": None},
+        {"custom_null": None},
+        {"nested": {"custom_null": None}},
+        {"items": ["value", None]},
+    ],
+)
+def test_legacy_asset_request_rejects_null_contract_values(
+    null_field: dict,
+) -> None:
+    contract = {
+        "entity": {"domain": "proof.example.com"},
+        "issuer_pubkey": PUBKEY,
+        "name": "Legacy Asset",
+        "version": 0,
+        **null_field,
+    }
+
+    with pytest.raises(ValidationError):
+        LegacyAssetRequest.model_validate(
+            {
+                "asset_id": ASSET_ID,
+                "contract": contract,
+            }
+        )
 
 
 def test_legacy_asset_request_rejects_oversized_contract() -> None:
