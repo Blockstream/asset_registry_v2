@@ -59,6 +59,33 @@ Regenerate the OpenAPI snapshot after changing routes or schemas:
 
 FastAPI and Pydantic are the source of truth. Do not edit `openapi.yaml` manually.
 
+## Genesis Admin
+
+The first deployment can bootstrap a root admin from the
+`ASSET_REGISTRY_GENESIS_ADMIN_PUBKEY` setting. Generate a new admin keypair
+from the repository root:
+
+```bash
+.venv/bin/python scripts/generate_admin_keypair.py
+```
+
+The command outputs `private_key` and `public_key` as lowercase hex. Keep the
+private key secret; it is required to sign admin actions. Configure the public
+key as the genesis admin:
+
+```bash
+ASSET_REGISTRY_GENESIS_ADMIN_PUBKEY=<public_key>
+```
+
+When an admin-protected endpoint is first accessed, the configured key becomes
+the root admin if the registry does not contain any admins. The root admin can
+then register additional admins using the public keys they generate with the
+same script. Each admin must retain their own private key and share only their
+public key.
+
+See [configuration](docs/configuration.md) and
+[deployment notes](docs/deployment.md) for related operational settings.
+
 ## Asset Icons
 
 V2 asset responses expose an approved icon as a registry-relative,

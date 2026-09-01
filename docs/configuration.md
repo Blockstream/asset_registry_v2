@@ -35,6 +35,16 @@ Configuration is read from environment variables with the `ASSET_REGISTRY_` pref
 
 Every response includes an `X-Request-ID` header. If the client supplies `X-Request-ID`, the service preserves it; otherwise it generates a UUID.
 
+## Admin key generation
+
+Generate a secp256k1 keypair for a new admin from the repository root:
+
+```bash
+.venv/bin/python scripts/generate_admin_keypair.py
+```
+
+The command prints the private and compressed public keys as lowercase hex. The admin must keep `private_key` secret and give only `public_key` to the root admin. For the initial root admin, set `ASSET_REGISTRY_GENESIS_ADMIN_PUBKEY` to the generated `public_key` value.
+
 ## Reverse proxy client IPs
 
 Registration rate limits use the client address resolved by Uvicorn in `request.client`. The container starts Uvicorn with proxy-header handling enabled. Uvicorn accepts `X-Forwarded-For` only when the immediate socket peer is trusted by its `FORWARDED_ALLOW_IPS` setting, which defaults to `127.0.0.1`. If the reverse proxy connects from another address, set `FORWARDED_ALLOW_IPS` to a comma-separated list containing only the proxy IPs or CIDRs. Do not use `*` when untrusted clients can connect to Uvicorn directly.
