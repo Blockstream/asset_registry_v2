@@ -223,7 +223,6 @@ def test_legacy_registration_conflict_is_swallowed_when_shadow_write_is_enabled(
         settings=Settings(
             legacy_shadow_write=True, legacy_base_url="https://legacy.example.com"
         ),
-        _rate_limit=None,
     )
 
     assert result["asset_id"] == legacy_request().asset_id
@@ -247,7 +246,6 @@ def test_legacy_registration_conflict_is_not_swallowed_when_shadow_write_is_disa
             settings=Settings(
                 legacy_shadow_write=False, legacy_base_url="https://legacy.example.com"
             ),
-            _rate_limit=None,
         )
     except RegistryError as exc:
         assert exc.error == ErrorCode.ASSET_CONFLICT

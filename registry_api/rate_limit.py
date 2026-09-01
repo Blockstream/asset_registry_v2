@@ -2,23 +2,25 @@
 
 The limiter is per-process and in-memory: with multiple workers each worker
 enforces its own budget, so it is a best-effort control against scripted abuse
-rather than a hard global quota. Client IPs come from the ASGI server's
-``request.client`` value. Uvicorn resolves trusted forwarded headers before the
-request reaches the application; the application deliberately does not parse
-them a second time.
+rather than a hard global quota. Client IPs come from the ASGI scope's
+``client`` value. Uvicorn resolves trusted forwarded headers before the request
+reaches the application; the application deliberately does not parse them a
+second time.
 """
 
-from collections import deque
+import re
 import threading
 import time
+from collections import deque
 
-from fastapi import Depends, Request
+from starlette.responses import JSONResponse
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from registry_api.client_address import normalize_client_ip
-from registry_api.errors import ErrorCode, RegistryError
-from registry_api.settings import Settings, get_settings
+from registry_api.errors import ErrorCode
 
 _MAX_TRACKED_CLIENTS = 10_000
+_MIGRATION_PATH = re.compile(r"/v2/assets/[^/]+/migrate")
 
 
 class _SlidingWindowLimiter:
@@ -77,32 +79,64 @@ class _SlidingWindowLimiter:
 _registration_limiter = _SlidingWindowLimiter()
 
 
-def _registration_client_ip(request: Request) -> str:
-    """Return the client identity already resolved by the ASGI server.
+class RegistrationRateLimitMiddleware:
+    """Reject registration traffic before FastAPI reads or parses its body."""
 
-    The Docker entrypoint enables Uvicorn's proxy-header middleware. Uvicorn
-    accepts ``X-Forwarded-For`` only from peers trusted by
-    ``FORWARDED_ALLOW_IPS`` and exposes the result as ``request.client``.
-    """
-    if request.client is None:
+    def __init__(
+        self,
+        app: ASGIApp,
+        *,
+        limit: int,
+        window_seconds: float,
+    ) -> None:
+        self.app = app
+        self.limit = limit
+        self.window_seconds = window_seconds
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if (
+            scope["type"] != "http"
+            or self.limit <= 0
+            or not _is_registration_request(scope)
+        ):
+            await self.app(scope, receive, send)
+            return
+
+        if _registration_limiter.allow(
+            f"register:{_registration_scope_client_ip(scope)}",
+            limit=self.limit,
+            window_seconds=self.window_seconds,
+        ):
+            await self.app(scope, receive, send)
+            return
+
+        await JSONResponse(
+            status_code=429,
+            content={
+                "error": ErrorCode.RATE_LIMITED,
+                "message": "too many registration or migration requests; retry later",
+            },
+        )(scope, receive, send)
+
+
+def _is_registration_request(scope: Scope) -> bool:
+    if scope.get("method") != "POST":
+        return False
+    path = _route_relative_path(scope)
+    return path in {"/", "/v2/assets"} or _MIGRATION_PATH.fullmatch(path) is not None
+
+
+def _route_relative_path(scope: Scope) -> str:
+    path = scope.get("path", "")
+    root_path = scope.get("root_path", "").rstrip("/")
+    if root_path and (path == root_path or path.startswith(f"{root_path}/")):
+        return path[len(root_path) :] or "/"
+    return path
+
+
+def _registration_scope_client_ip(scope: Scope) -> str:
+    client = scope.get("client")
+    if client is None:
         return "unknown"
-    return normalize_client_ip(request.client.host) or request.client.host
-
-
-def registration_rate_limit(
-    request: Request,
-    settings: Settings = Depends(get_settings),
-) -> None:
-    """Throttle registration and migration requests per client IP."""
-    key = f"register:{_registration_client_ip(request)}"
-    if _registration_limiter.allow(
-        key,
-        limit=settings.registration_rate_limit,
-        window_seconds=settings.registration_rate_limit_window_seconds,
-    ):
-        return
-    raise RegistryError(
-        ErrorCode.RATE_LIMITED,
-        "too many registration or migration requests; retry later",
-        status_code=429,
-    )
+    host = client[0]
+    return normalize_client_ip(host) or host

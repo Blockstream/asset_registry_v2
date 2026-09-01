@@ -21,7 +21,6 @@ from registry_api.icons import (
 )
 from registry_api.legacy_assets import deregister_legacy_asset, get_legacy_asset
 from registry_api.legacy_response import legacy_registration_response
-from registry_api.rate_limit import registration_rate_limit
 from registry_api.registration import register_legacy_asset
 from registry_api.schemas import (
     AssetId,
@@ -29,6 +28,7 @@ from registry_api.schemas import (
     LegacyContractValidationRequest,
     LegacyDeletionRequest,
 )
+from registry_api.security import CachedJsonAPIRoute
 from registry_api.serialized_fragments import stream_legacy_all_json_bytes
 from registry_api.settings import Settings, get_settings
 from registry_api.shadow import (
@@ -53,6 +53,7 @@ router = APIRouter(
     tags=["Legacy"],
     responses=STANDARD_ERROR_RESPONSES,
     dependencies=[Depends(reject_unknown_query_parameters)],
+    route_class=CachedJsonAPIRoute,
 )
 
 
@@ -68,7 +69,6 @@ def register_asset_legacy_root(
     response: Response,
     db: Annotated[Session, Depends(get_db)],
     settings: Annotated[Settings, Depends(get_settings)],
-    _rate_limit: Annotated[None, Depends(registration_rate_limit)],
 ) -> dict[str, Any]:
     """Register an asset through the legacy-compatible flow. New clients should use `POST /v2/assets`."""
     proof_client = HttpxProofClient(

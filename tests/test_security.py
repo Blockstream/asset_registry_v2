@@ -5,14 +5,16 @@ from collections.abc import Iterable
 from typing import Any
 
 import pytest
+from fastapi import Request
+from fastapi.testclient import TestClient
 from starlette.types import Message, Receive, Scope, Send
 
 from registry_api.security import (
     JsonDepthLimitMiddleware,
     RequestBodySizeLimitMiddleware,
     RequestJsonTooDeep,
-    _JsonDepthValidator,
     _content_length,
+    _JsonDepthValidator,
     _should_check_json_depth,
 )
 
@@ -260,8 +262,28 @@ def test_create_app_installs_size_limit_outside_json_depth_limit() -> None:
     middleware_names = [middleware.cls.__name__ for middleware in create_app().user_middleware]
 
     assert middleware_names[:4] == [
-        "BaseHTTPMiddleware",
+        "RequestLoggingMiddleware",
+        "RegistrationRateLimitMiddleware",
         "RequestBodySizeLimitMiddleware",
         "JsonDepthLimitMiddleware",
-        "GZipMiddleware",
     ]
+
+
+def test_api_route_reuses_json_parsed_by_depth_middleware(monkeypatch) -> None:
+    from registry_api.main import create_app
+    from registry_api.settings import Settings
+
+    cache_states = []
+    request_json = Request.json
+
+    async def recording_request_json(request: Request) -> Any:
+        cache_states.append(hasattr(request, "_json"))
+        return await request_json(request)
+
+    monkeypatch.setattr(Request, "json", recording_request_json)
+    client = TestClient(create_app(settings=Settings(registration_rate_limit=0)))
+
+    response = client.post("/v2/assets", json={})
+
+    assert response.status_code == 422
+    assert cache_states == [True]

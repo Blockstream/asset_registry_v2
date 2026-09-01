@@ -6,7 +6,9 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import Request, Response
+from fastapi import Request
+from starlette.datastructures import MutableHeaders
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from registry_api.client_address import normalize_client_ip
 
@@ -57,32 +59,48 @@ def request_id_from_request(request: Request) -> str:
     return request_id[:MAX_REQUEST_ID_LENGTH] if request_id else str(uuid.uuid4())
 
 
-async def request_logging_middleware(request: Request, call_next) -> Response:
-    logger = logging.getLogger("registry_api.request")
-    request_id = request_id_from_request(request)
-    request.state.request_id = request_id
-    started = time.perf_counter()
-    try:
-        response = await call_next(request)
-    except Exception as exc:
-        duration_ms = round((time.perf_counter() - started) * 1000, 3)
-        logger.exception(
-            "request_failed",
-            extra=_request_log_extra(
-                request, request_id, 500, duration_ms, error=type(exc).__name__
-            ),
-        )
-        raise
+class RequestLoggingMiddleware:
+    """Log requests without Starlette's task-spawning HTTP middleware wrapper."""
 
-    duration_ms = round((time.perf_counter() - started) * 1000, 3)
-    response.headers[REQUEST_ID_HEADER] = request_id
-    logger.info(
-        "request_completed",
-        extra=_request_log_extra(
-            request, request_id, response.status_code, duration_ms
-        ),
-    )
-    return response
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        request = Request(scope)
+        logger = logging.getLogger("registry_api.request")
+        request_id = request_id_from_request(request)
+        request.state.request_id = request_id
+        started = time.perf_counter()
+        status_code = 500
+
+        async def send_with_request_id(message: Message) -> None:
+            nonlocal status_code
+            if message["type"] == "http.response.start":
+                status_code = message["status"]
+                MutableHeaders(scope=message)[REQUEST_ID_HEADER] = request_id
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_with_request_id)
+        except Exception as exc:
+            duration_ms = round((time.perf_counter() - started) * 1000, 3)
+            logger.exception(
+                "request_failed",
+                extra=_request_log_extra(
+                    request, request_id, 500, duration_ms, error=type(exc).__name__
+                ),
+            )
+            raise
+
+        duration_ms = round((time.perf_counter() - started) * 1000, 3)
+        logger.info(
+            "request_completed",
+            extra=_request_log_extra(request, request_id, status_code, duration_ms),
+        )
 
 
 def _request_log_extra(
