@@ -5,12 +5,12 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
 
-from registry_api.compression import GZipMiddleware
 from registry_api.api.health import router as health_router
 from registry_api.api.legacy import router as legacy_router
 from registry_api.api.v2 import router as v2_router
+from registry_api.compression import GZipMiddleware
 from registry_api.errors import ErrorResponse, RegistryError
-from registry_api.observability import configure_logging, request_logging_middleware
+from registry_api.observability import RequestLoggingMiddleware, configure_logging
 from registry_api.openapi import install_openapi_builder
 from registry_api.openapi_metadata import (
     API_DESCRIPTION,
@@ -18,6 +18,7 @@ from registry_api.openapi_metadata import (
     API_VERSION,
     OPENAPI_TAGS,
 )
+from registry_api.rate_limit import RegistrationRateLimitMiddleware
 from registry_api.security import (
     JsonDepthLimitMiddleware,
     RequestBodySizeLimitMiddleware,
@@ -50,7 +51,12 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
         RequestBodySizeLimitMiddleware,
         max_body_bytes=settings.max_request_body_bytes,
     )
-    app.middleware("http")(request_logging_middleware)
+    app.add_middleware(
+        RegistrationRateLimitMiddleware,
+        limit=settings.registration_rate_limit,
+        window_seconds=settings.registration_rate_limit_window_seconds,
+    )
+    app.add_middleware(RequestLoggingMiddleware)
 
     @app.exception_handler(RegistryError)
     async def registry_error_handler(

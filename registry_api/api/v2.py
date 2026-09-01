@@ -40,37 +40,37 @@ from registry_api.openapi_metadata import (
     ADMIN_ICON_SEARCH_EXAMPLES,
     ADMIN_ICON_UPLOAD_EXAMPLES,
     ADMIN_LIFECYCLE_EXAMPLES,
-    ISSUER_ACTION_EXAMPLES,
     ICON_PROPOSAL_EXAMPLES,
+    ISSUER_ACTION_EXAMPLES,
     ISSUER_ICON_SEARCH_EXAMPLES,
     REGISTER_ASSET_EXAMPLES,
 )
-from registry_api.rate_limit import registration_rate_limit
 from registry_api.schemas import (
     AdminActionResponse,
     AdminAssetAction,
     AdminIconUploadRequest,
     AdminLifecycleAction,
+    ApproveIconAction,
     AssetId,
     AssetListResponse,
     AssetResponse,
     AuditLogResponse,
-    IssuerActionResponse,
-    IssuerAction,
+    IconHash,
     IconProposalRequest,
     IconProposalResponse,
-    IconHash,
+    IssuerAction,
+    IssuerActionResponse,
     IssuerIconProposalListResponse,
     IssuerIconProposalSearchRequest,
     LatestActionHashResponse,
     MigrateAssetAction,
     PendingIconProposalListResponse,
     PendingIconProposalSearchRequest,
-    ApproveIconAction,
-    RejectIconAction,
     RegisterAssetRequest,
+    RejectIconAction,
     UpdateAdminAnnotationsAction,
 )
+from registry_api.security import CachedJsonAPIRoute
 from registry_api.serialized_fragments import stream_v2_all_json_bytes
 from registry_api.settings import Settings, get_settings
 from registry_api.v2_assets import (
@@ -85,6 +85,7 @@ router = APIRouter(
     prefix="/v2",
     responses=STANDARD_ERROR_RESPONSES,
     dependencies=[Depends(reject_unknown_query_parameters)],
+    route_class=CachedJsonAPIRoute,
 )
 
 
@@ -156,7 +157,6 @@ def register_asset_v2(
     ],
     db: Annotated[Session, Depends(get_db)],
     settings: Annotated[Settings, Depends(get_settings)],
-    _rate_limit: Annotated[None, Depends(registration_rate_limit)],
     asset_registry_signature: Annotated[
         str | None, Header(alias="Asset-Registry-Signature")
     ] = None,
@@ -606,7 +606,6 @@ async def migrate_legacy_asset(
     asset_id: AssetId,
     _action: MigrateAssetAction,
     request: Request,
-    _rate_limit: Annotated[None, Depends(registration_rate_limit)],
     db: Annotated[Session, Depends(get_db)],
     _bootstrap: Annotated[None, Depends(ensure_genesis_admin)],
     asset_registry_admin_signature: Annotated[

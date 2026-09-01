@@ -1,8 +1,10 @@
 from collections import deque
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any
 
-from starlette.responses import JSONResponse
+from fastapi import Request
+from fastapi.routing import APIRoute
+from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from registry_api.canonical_json import parse_json_bytes
@@ -25,6 +27,30 @@ OPEN_ARRAY_BYTE = b"["[0]
 CLOSE_ARRAY_BYTE = b"]"[0]
 OPEN_CONTAINER_BYTES = (OPEN_OBJECT_BYTE, OPEN_ARRAY_BYTE)
 CLOSE_CONTAINER_BYTES = (CLOSE_OBJECT_BYTE, CLOSE_ARRAY_BYTE)
+
+_PARSED_JSON_SCOPE_KEY = "registry_api.parsed_json"
+_JSON_BODY_SCOPE_KEY = "registry_api.json_body"
+_UNSET_JSON = object()
+
+
+class CachedJsonAPIRoute(APIRoute):
+    """Reuse JSON already validated by :class:`JsonDepthLimitMiddleware`."""
+
+    def get_route_handler(
+        self,
+    ) -> Callable[[Request], Coroutine[Any, Any, Response]]:
+        route_handler = super().get_route_handler()
+
+        async def cached_json_route_handler(request: Request) -> Response:
+            if _PARSED_JSON_SCOPE_KEY in request.scope:
+                # FastAPI reads request.body() and request.json() before it solves
+                # dependencies. Seed both Starlette request caches so the strict
+                # middleware parse is the only parse and buffer pass.
+                request._body = request.scope[_JSON_BODY_SCOPE_KEY]
+                request._json = request.scope[_PARSED_JSON_SCOPE_KEY]
+            return await route_handler(request)
+
+        return cached_json_route_handler
 
 
 class RequestBodySizeLimitMiddleware:
@@ -74,13 +100,17 @@ class JsonDepthLimitMiddleware:
             return
 
         try:
-            messages = await self._validated_json_messages(receive)
+            messages, body, parsed = await self._validated_json_messages(receive)
         except RequestJsonTooDeep:
             await _too_deep_response(self.max_json_depth)(scope, receive, send)
             return
         except RegistryError as exc:
             await _invalid_json_response(exc)(scope, receive, send)
             return
+
+        if parsed is not _UNSET_JSON:
+            scope[_JSON_BODY_SCOPE_KEY] = body
+            scope[_PARSED_JSON_SCOPE_KEY] = parsed
 
         async def replay_receive() -> Message:
             if messages:
@@ -89,7 +119,9 @@ class JsonDepthLimitMiddleware:
 
         await self.app(scope, replay_receive, send)
 
-    async def _validated_json_messages(self, receive: Receive) -> deque[Message]:
+    async def _validated_json_messages(
+        self, receive: Receive
+    ) -> tuple[deque[Message], bytes, Any]:
         messages: deque[Message] = deque()
         body_chunks: list[bytes] = []
         depth_validator = _JsonDepthValidator(self.max_json_depth) if self.max_json_depth > 0 else None
@@ -97,7 +129,7 @@ class JsonDepthLimitMiddleware:
             message = await receive()
             messages.append(message)
             if message["type"] != "http.request":
-                return messages
+                return messages, b"", _UNSET_JSON
 
             body = message.get("body", b"")
             body_chunks.append(body)
@@ -105,8 +137,8 @@ class JsonDepthLimitMiddleware:
                 depth_validator.feed(body)
 
             if not message.get("more_body", False):
-                parse_json_bytes(b"".join(body_chunks))
-                return messages
+                joined_body = b"".join(body_chunks)
+                return messages, joined_body, parse_json_bytes(joined_body)
 
 
 def _content_length(scope: Scope) -> int | None:
