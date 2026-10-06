@@ -383,6 +383,24 @@ In one transaction:
 
 `AuditLogResponse` is assembled from `actions`, ordered by `audit_sequence`.
 
+### `asset_registry_version`
+
+Single-row table holding the registry-wide modification time used for
+`Last-Modified` / `If-Modified-Since` on asset JSON reads.
+
+| Column | Type | Constraints / Notes |
+| --- | --- | --- |
+| `singleton` | `boolean` | Primary key, default `true`; check constraint keeps exactly one row. |
+| `modified_at` | `timestamptz` | Required. Whole-second database time of the latest committed asset change. |
+
+Deferred constraint triggers on every table that feeds asset responses bump
+`modified_at` once per transaction at commit time, to
+`greatest(date_trunc('second', clock_timestamp()), modified_at + interval '1 second')`.
+The row lock serializes writers in commit order, and every commit gets a later
+date than any reader could have seen before it, so reads take no lock. Write
+bursts can move the time ahead of the database clock; reads never validate
+changes in the current or a future second.
+
 ## Open Questions
 
 - Whether initial registration should be issuer signed. The draft requires signed issuer mutations but does not require registration itself to be signed.

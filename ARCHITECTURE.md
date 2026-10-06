@@ -81,4 +81,26 @@ During migration, supported legacy writes can be shadow-forwarded to the origina
 
 SQLAlchemy models use UUID keys, explicit constraints, and normalized child tables. Service-layer writes are transactional and roll back on failure. Serialized fragments are cached for large compatibility listings and refreshed with the underlying asset state.
 
+Asset JSON reads (`GET /`, `/index.json`, `/{asset_id}`, `/v2/assets`,
+`/v2/assets/all.json`, and `/v2/assets/{asset_id}`) send `Last-Modified` and
+`Cache-Control: no-cache`. Clients can send the returned HTTP date in
+`If-Modified-Since` to receive a bodyless `304 Not Modified` when unchanged.
+All of these reads share one registry-wide modification time stored in
+`asset_registry_version`, which conservatively invalidates every lookup, filter,
+and page on any asset change, including removals. Deferred constraint triggers on
+the asset tables bump it at commit time from the database clock while holding the
+row lock, so it follows commit order regardless of which code path (ORM or raw
+SQL) wrote the change. Each commit advances the time by at least one second, so
+a commit still in flight when a read sees the previous time always gets a later
+HTTP date, and reads take no lock on the version row. A burst of writes can push
+the time ahead of the database clock, which suspends `304` responses until the
+clock catches up.
+`Last-Modified` is capped before the current database second, and the server
+never returns `304` while the latest change or
+the client's date falls in the current or a future second, so a write committing
+later in the same second, or a client with a skewed clock, cannot pin stale data.
+Missing assets return `404` without `Last-Modified`. Invalid or repeated dates are
+ignored, and `If-None-Match` takes precedence over date validation. These headers
+apply to JSON reads; content-addressed PNG icons retain their existing ETag behavior.
+
 See [`schema.md`](schema.md) for the database design, [`docs/configuration.md`](docs/configuration.md) for runtime settings, and [`docs/deployment.md`](docs/deployment.md) for operational guidance.

@@ -11,7 +11,13 @@ class Base(DeclarativeBase):
 
 
 def make_engine():
-    return create_engine(get_settings().database_url, pool_pre_ping=True)
+    settings = get_settings()
+    lock_timeout_ms = round(settings.database_lock_timeout_seconds * 1000)
+    return create_engine(
+        settings.database_url,
+        pool_pre_ping=True,
+        connect_args={"options": f"-c lock_timeout={lock_timeout_ms}"},
+    )
 
 
 engine = make_engine()

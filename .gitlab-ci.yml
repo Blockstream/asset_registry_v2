@@ -4,23 +4,32 @@
 # Python buildpack does not implement the test feature, so the job always
 # fails with "Selected buildpack does not support test feature".
 #
-# Override that job with a real pytest run instead. The repository's
-# DB-dependent tests self-skip unless ASSET_REGISTRY_TEST_DATABASE_URL is
-# set, so no database service is required here.
+# Override that job with a real pytest run against PostgreSQL 16, including
+# migrations and the database-backed tests.
 include:
   - template: Auto-DevOps.gitlab-ci.yml
 
 test:
   stage: test
   image: python:3.12-slim
+  services:
+    - name: postgres:16
+      alias: postgres
   variables:
     # Fixtures used by the chain-verification tests live in the
     # `asset_registry` git submodule.
     GIT_SUBMODULE_STRATEGY: recursive
+    # Disposable credentials for this job's isolated database service.
+    POSTGRES_DB: asset_registry_test
+    POSTGRES_USER: asset_registry
+    POSTGRES_PASSWORD: asset_registry
+    ASSET_REGISTRY_DATABASE_URL: postgresql+psycopg://asset_registry:asset_registry@postgres:5432/asset_registry_test
+    ASSET_REGISTRY_TEST_DATABASE_URL: postgresql+psycopg://asset_registry:asset_registry@postgres:5432/asset_registry_test
   before_script:
     - pip install --require-hashes -r requirements-dev.txt
     - pip install --no-deps -e .
   script:
+    - alembic upgrade head
     - pytest
   rules:
     - if: '$TEST_DISABLED'
