@@ -198,4 +198,6 @@ npm run check           # audit, format check, lint, typecheck, and tests
 npm run build           # declarations, ESM, and CommonJS
 ```
 
+The `@istanbuljs/load-nyc-config` dependency override uses `js-yaml` 4.3.2 or newer to remove the vulnerable `sprintf-js` dependency from Jest's coverage tooling. The loader uses `js-yaml.load()`, which remains supported in v4. Remove the override when the upstream loader adopts a dependency tree without `sprintf-js`.
+
 The OpenAPI snapshot is the source of truth for wire request and response types. Generated declarations in `src/generated/` should not be edited manually.
