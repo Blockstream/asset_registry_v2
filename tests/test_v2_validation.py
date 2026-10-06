@@ -1,4 +1,5 @@
 from typing import cast
+from unittest.mock import Mock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -24,7 +25,9 @@ def test_search_assets_api_accepts_mixed_case_filter_values(monkeypatch) -> None
 
     monkeypatch.setattr(v2_api, "search_v2_assets", fake_search)
     app = create_app()
-    app.dependency_overrides[get_db] = lambda: object()
+    db = Mock(spec=Session)
+    db.scalar.return_value = None
+    app.dependency_overrides[get_db] = lambda: db
 
     response = TestClient(app).get(
         "/v2/assets",

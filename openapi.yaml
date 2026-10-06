@@ -23,64 +23,6 @@ paths:
                 type: object
                 title: Response Healthcheck
   /:
-    get:
-      tags:
-      - Legacy
-      summary: Legacy all-assets endpoint
-      description: Return the legacy-compatible asset object keyed by asset ID.
-      operationId: getAllAssetsLegacyRoot
-      responses:
-        '200':
-          description: Legacy asset listing keyed by asset ID.
-          content:
-            application/json:
-              schema:
-                type: object
-        '400':
-          description: Malformed or semantically invalid request.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          description: Authentication or signature verification failed.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '403':
-          description: The authenticated actor is not authorized.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '404':
-          description: The requested resource or route was not found.
-          content:
-            application/json:
-              schema:
-                anyOf:
-                - $ref: '#/components/schemas/ErrorResponse'
-                - $ref: '#/components/schemas/FrameworkErrorResponse'
-                title: Response 404 Getallassetslegacyroot
-        '409':
-          description: The request conflicts with current registry state.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '413':
-          description: The request body exceeds the configured size limit.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '503':
-          description: A required verification service is unavailable.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
     post:
       tags:
       - Legacy
@@ -88,19 +30,19 @@ paths:
       description: Register an asset through the legacy-compatible flow. New clients should use `POST /v2/assets`.
       operationId: registerAssetLegacyRoot
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/LegacyAssetRequest'
-        required: true
       responses:
         '201':
           description: Successful Response
           content:
             application/json:
               schema:
-                additionalProperties: true
                 type: object
+                additionalProperties: true
                 title: Response Registerassetlegacyroot
         '400':
           description: Malformed or semantically invalid request.
@@ -159,13 +101,21 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /index.json:
     get:
       tags:
       - Legacy
-      summary: Legacy all-assets JSON endpoint
+      summary: Legacy all-assets endpoint
       description: Return the legacy-compatible asset object keyed by asset ID.
-      operationId: getAllAssetsLegacyIndex
+      operationId: getAllAssetsLegacyRoot
+      parameters:
+      - name: If-Modified-Since
+        in: header
+        required: false
+        schema:
+          description: HTTP date from Last-Modified; returns 304 if assets are unchanged.
+          title: If-Modified-Since
+          type: string
+        description: HTTP date from Last-Modified; returns 304 if assets are unchanged.
       responses:
         '200':
           description: Legacy asset listing keyed by asset ID.
@@ -173,6 +123,124 @@ paths:
             application/json:
               schema:
                 type: object
+          headers:
+            Last-Modified:
+              description: Asset modification time in HTTP-date format, when available.
+              schema:
+                type: string
+            Cache-Control:
+              description: Requires revalidation before reusing the cached response.
+              schema:
+                type: string
+                enum:
+                - no-cache
+            Vary:
+              schema:
+                type: string
+        '400':
+          description: Malformed or semantically invalid request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Authentication or signature verification failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: The authenticated actor is not authorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: The requested resource or route was not found.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                - $ref: '#/components/schemas/ErrorResponse'
+                - $ref: '#/components/schemas/FrameworkErrorResponse'
+                title: Response 404 Getallassetslegacyroot
+        '409':
+          description: The request conflicts with current registry state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: The request body exceeds the configured size limit.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: A required verification service is unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '304':
+          description: Assets have not changed since If-Modified-Since; no response body.
+          headers:
+            Last-Modified:
+              description: Asset modification time in HTTP-date format, when available.
+              schema:
+                type: string
+            Cache-Control:
+              description: Requires revalidation before reusing the cached response.
+              schema:
+                type: string
+                enum:
+                - no-cache
+            Vary:
+              schema:
+                type: string
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /index.json:
+    get:
+      tags:
+      - Legacy
+      summary: Legacy all-assets JSON endpoint
+      description: Return the legacy-compatible asset object keyed by asset ID.
+      operationId: getAllAssetsLegacyIndex
+      parameters:
+      - name: If-Modified-Since
+        in: header
+        required: false
+        schema:
+          description: HTTP date from Last-Modified; returns 304 if assets are unchanged.
+          title: If-Modified-Since
+          type: string
+        description: HTTP date from Last-Modified; returns 304 if assets are unchanged.
+      responses:
+        '200':
+          description: Legacy asset listing keyed by asset ID.
+          content:
+            application/json:
+              schema:
+                type: object
+          headers:
+            Last-Modified:
+              description: Asset modification time in HTTP-date format, when available.
+              schema:
+                type: string
+            Cache-Control:
+              description: Requires revalidation before reusing the cached response.
+              schema:
+                type: string
+                enum:
+                - no-cache
+            Vary:
+              schema:
+                type: string
         '400':
           description: Malformed or semantically invalid request.
           content:
@@ -218,6 +286,28 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '304':
+          description: Assets have not changed since If-Modified-Since; no response body.
+          headers:
+            Last-Modified:
+              description: Asset modification time in HTTP-date format, when available.
+              schema:
+                type: string
+            Cache-Control:
+              description: Requires revalidation before reusing the cached response.
+              schema:
+                type: string
+                enum:
+                - no-cache
+            Vary:
+              schema:
+                type: string
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /icons.json:
     get:
       tags:
@@ -366,15 +456,34 @@ paths:
           maxLength: 64
           pattern: ^[0-9a-fA-F]{64}$
           title: Asset Id
+      - name: If-Modified-Since
+        in: header
+        required: false
+        schema:
+          description: HTTP date from Last-Modified; returns 304 if assets are unchanged.
+          title: If-Modified-Since
+          type: string
+        description: HTTP date from Last-Modified; returns 304 if assets are unchanged.
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
+              schema: {}
+          headers:
+            Last-Modified:
+              description: Asset modification time in HTTP-date format, when available.
               schema:
-                type: object
-                additionalProperties: true
-                title: Response Getassetlegacyroot
+                type: string
+            Cache-Control:
+              description: Requires revalidation before reusing the cached response.
+              schema:
+                type: string
+                enum:
+                - no-cache
+            Vary:
+              schema:
+                type: string
         '400':
           description: Malformed or semantically invalid request.
           content:
@@ -420,6 +529,22 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '304':
+          description: Assets have not changed since If-Modified-Since; no response body.
+          headers:
+            Last-Modified:
+              description: Asset modification time in HTTP-date format, when available.
+              schema:
+                type: string
+            Cache-Control:
+              description: Requires revalidation before reusing the cached response.
+              schema:
+                type: string
+                enum:
+                - no-cache
+            Vary:
+              schema:
+                type: string
         '422':
           description: Validation Error
           content:
@@ -761,6 +886,14 @@ paths:
           type: string
           format: date-time
         description: Return assets updated strictly after this timestamp.
+      - name: If-Modified-Since
+        in: header
+        required: false
+        schema:
+          description: HTTP date from Last-Modified; returns 304 if assets are unchanged.
+          title: If-Modified-Since
+          type: string
+        description: HTTP date from Last-Modified; returns 304 if assets are unchanged.
       responses:
         '200':
           description: Successful Response
@@ -768,6 +901,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AssetListResponse'
+          headers:
+            Last-Modified:
+              description: Asset modification time in HTTP-date format, when available.
+              schema:
+                type: string
+            Cache-Control:
+              description: Requires revalidation before reusing the cached response.
+              schema:
+                type: string
+                enum:
+                - no-cache
+            Vary:
+              schema:
+                type: string
         '400':
           description: Malformed or semantically invalid request.
           content:
@@ -813,6 +960,22 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '304':
+          description: Assets have not changed since If-Modified-Since; no response body.
+          headers:
+            Last-Modified:
+              description: Asset modification time in HTTP-date format, when available.
+              schema:
+                type: string
+            Cache-Control:
+              description: Requires revalidation before reusing the cached response.
+              schema:
+                type: string
+                enum:
+                - no-cache
+            Vary:
+              schema:
+                type: string
         '422':
           description: Validation Error
           content:
@@ -826,16 +989,39 @@ paths:
       summary: Get all v2-normalized assets as a single JSON object
       description: Compatibility endpoint for consumers that require one object keyed by asset ID.
       operationId: getAllAssetsV2Json
+      parameters:
+      - name: If-Modified-Since
+        in: header
+        required: false
+        schema:
+          description: HTTP date from Last-Modified; returns 304 if assets are unchanged.
+          title: If-Modified-Since
+          type: string
+        description: HTTP date from Last-Modified; returns 304 if assets are unchanged.
       responses:
         '200':
           description: Object keyed by asset ID.
           content:
             application/json:
               schema:
+                type: object
                 additionalProperties:
                   $ref: '#/components/schemas/AssetResponse'
-                type: object
                 title: Response 200 Getallassetsv2Json
+          headers:
+            Last-Modified:
+              description: Asset modification time in HTTP-date format, when available.
+              schema:
+                type: string
+            Cache-Control:
+              description: Requires revalidation before reusing the cached response.
+              schema:
+                type: string
+                enum:
+                - no-cache
+            Vary:
+              schema:
+                type: string
         '400':
           description: Malformed or semantically invalid request.
           content:
@@ -881,6 +1067,28 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '304':
+          description: Assets have not changed since If-Modified-Since; no response body.
+          headers:
+            Last-Modified:
+              description: Asset modification time in HTTP-date format, when available.
+              schema:
+                type: string
+            Cache-Control:
+              description: Requires revalidation before reusing the cached response.
+              schema:
+                type: string
+                enum:
+                - no-cache
+            Vary:
+              schema:
+                type: string
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v2/assets/{asset_id}/icon:
     get:
       tags:
@@ -1099,6 +1307,14 @@ paths:
           maxLength: 64
           pattern: ^[0-9a-fA-F]{64}$
           title: Asset Id
+      - name: If-Modified-Since
+        in: header
+        required: false
+        schema:
+          description: HTTP date from Last-Modified; returns 304 if assets are unchanged.
+          title: If-Modified-Since
+          type: string
+        description: HTTP date from Last-Modified; returns 304 if assets are unchanged.
       responses:
         '200':
           description: Successful Response
@@ -1106,6 +1322,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AssetResponse'
+          headers:
+            Last-Modified:
+              description: Asset modification time in HTTP-date format, when available.
+              schema:
+                type: string
+            Cache-Control:
+              description: Requires revalidation before reusing the cached response.
+              schema:
+                type: string
+                enum:
+                - no-cache
+            Vary:
+              schema:
+                type: string
         '400':
           description: Malformed or semantically invalid request.
           content:
@@ -1151,6 +1381,22 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '304':
+          description: Assets have not changed since If-Modified-Since; no response body.
+          headers:
+            Last-Modified:
+              description: Asset modification time in HTTP-date format, when available.
+              schema:
+                type: string
+            Cache-Control:
+              description: Requires revalidation before reusing the cached response.
+              schema:
+                type: string
+                enum:
+                - no-cache
+            Vary:
+              schema:
+                type: string
         '422':
           description: Validation Error
           content:

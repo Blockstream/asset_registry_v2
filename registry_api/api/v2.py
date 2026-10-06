@@ -11,8 +11,10 @@ from registry_api.admin_actions import (
     bootstrap_genesis_admin,
     submit_admin_lifecycle_action,
 )
+from registry_api.api.asset_cache import IfModifiedSince, prepare_asset_read
 from registry_api.api.query_validation import reject_unknown_query_parameters
 from registry_api.api.responses import (
+    ASSET_CACHE_RESPONSES,
     RATE_LIMIT_ERROR_RESPONSES,
     STANDARD_ERROR_RESPONSES,
 )
@@ -194,9 +196,13 @@ def register_asset_v2(
     tags=["Assets"],
     operation_id="searchAssetsV2",
     summary="Search and list assets",
+    responses=ASSET_CACHE_RESPONSES,
 )
 def search_assets_v2(
+    request: Request,
+    response: Response,
     db: Annotated[Session, Depends(get_db)],
+    if_modified_since: IfModifiedSince = None,
     page: Annotated[int, Query(ge=1, le=1_000_000)] = 1,
     page_size: Annotated[int, Query(ge=1, le=500)] = 50,
     sort: Literal[
@@ -274,8 +280,11 @@ def search_assets_v2(
         Rfc3339DateTime | None,
         Query(description="Return assets updated strictly after this timestamp."),
     ] = None,
-) -> AssetListResponse:
+) -> AssetListResponse | Response:
     """Return a paginated, filtered asset list with stable deterministic sorting."""
+    cached = prepare_asset_read(request, response, db, if_modified_since)
+    if cached is not None:
+        return cached
     return search_v2_assets(
         db,
         page=page,
@@ -300,15 +309,29 @@ def search_assets_v2(
     operation_id="getAllAssetsV2Json",
     summary="Get all v2-normalized assets as a single JSON object",
     responses={
+        **ASSET_CACHE_RESPONSES,
         200: {
             "model": dict[str, AssetResponse],
             "description": "Object keyed by asset ID.",
+            "headers": ASSET_CACHE_RESPONSES[200]["headers"],
         }
     },
 )
-def all_assets_v2_json() -> StreamingResponse:
+def all_assets_v2_json(
+    request: Request,
+    response: Response,
+    db: Annotated[Session, Depends(get_db, scope="function")],
+    if_modified_since: IfModifiedSince = None,
+) -> Response:
     """Compatibility endpoint for consumers that require one object keyed by asset ID."""
-    return StreamingResponse(stream_v2_all_json_bytes(), media_type="application/json")
+    cached = prepare_asset_read(request, response, db, if_modified_since)
+    if cached is not None:
+        return cached
+    return StreamingResponse(
+        stream_v2_all_json_bytes(),
+        media_type="application/json",
+        headers=dict(response.headers),
+    )
 
 
 @router.get(
@@ -432,12 +455,21 @@ def get_asset_icon_by_hash_v2(
     tags=["Assets"],
     operation_id="getAssetV2",
     summary="Get an asset by asset ID",
+    responses=ASSET_CACHE_RESPONSES,
 )
 def get_asset_v2(
     asset_id: AssetId,
+    request: Request,
+    response: Response,
     db: Annotated[Session, Depends(get_db)],
-) -> AssetResponse:
+    if_modified_since: IfModifiedSince = None,
+) -> AssetResponse | Response:
     """Return the active v2-normalized asset record for an asset ID."""
+    cached = prepare_asset_read(
+        request, response, db, if_modified_since, asset_id=asset_id
+    )
+    if cached is not None:
+        return cached
     return get_v2_asset(db, asset_id)
 
 

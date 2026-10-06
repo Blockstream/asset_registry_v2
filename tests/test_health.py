@@ -33,11 +33,16 @@ def test_large_json_responses_are_gzipped_when_supported() -> None:
 
 
 def test_legacy_index_json_matches_root_listing(monkeypatch) -> None:
+    from unittest.mock import Mock
+
     from registry_api.api import legacy
+    from registry_api.db import get_db
 
     payload = b'{"asset-id":{"asset_id":"asset-id"}}'
     monkeypatch.setattr(legacy, "stream_legacy_all_json_bytes", lambda: iter([payload]))
-    client = TestClient(create_app())
+    app = create_app()
+    app.dependency_overrides[get_db] = lambda: Mock(scalar=lambda query: None)
+    client = TestClient(app)
 
     root_response = client.get("/")
     index_response = client.get("/index.json")

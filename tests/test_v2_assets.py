@@ -599,3 +599,88 @@ def signed_message(payload: bytes) -> str:
     message_hash = _bitcoin_signed_message_hash(payload.decode("utf-8"))
     signature = wally.ec_sig_from_bytes(SIGNING_PRIVATE_KEY, message_hash, wally.EC_FLAG_ECDSA)
     return base64.b64encode(signature).decode()
+
+
+@pytest.fixture()
+def asset_cache_client(session_factory, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from registry_api import serialized_fragments
+    from registry_api.db import get_db
+    from registry_api.main import create_app
+
+    app = create_app()
+
+    def test_db():
+        with session_factory() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = test_db
+    monkeypatch.setattr(serialized_fragments, "SessionLocal", session_factory)
+    with TestClient(app) as client:
+        yield client
+
+
+def test_asset_cache_invalidates_after_issuer_metadata_change(session_factory, asset_cache_client):
+    from registry_api.issuer_actions import get_latest_action_hash, submit_issuer_action
+
+    paths = ["/", "/index.json", f"/{ASSET_ID}", f"/{ASSET_ID.upper()}", "/v2/assets", "/v2/assets/all.json", f"/v2/assets/{ASSET_ID}", f"/v2/assets/{ASSET_ID.upper()}"]
+    with session_factory() as session:
+        register_v2_asset(session, v2_request(pubkey=SIGNING_PUBKEY))
+        asset = session.query(Asset).filter_by(asset_id=ASSET_ID).one()
+        asset.updated_at = datetime(2020, 1, 1, tzinfo=UTC)
+        session.flush()
+        refresh_asset_serialized_fragments(session, asset)
+        session.commit()
+
+    dates = {path: asset_cache_client.get(path).headers["Last-Modified"] for path in paths}
+    for path in paths:
+        assert asset_cache_client.get(path, headers={"If-Modified-Since": dates[path]}).status_code == 304
+
+    with session_factory() as session:
+        action = {
+            "signing_context": "liquid-asset-registry-action-v1",
+            "asset_id": ASSET_ID,
+            "operation": "set_custom_field",
+            "nonce": "cache-metadata-change",
+            "timestamp": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            "prev_action_hash": get_latest_action_hash(session, ASSET_ID).action_hash,
+            "mutable_schema_version": 1,
+            "custom_key": "cache_test",
+            "value": "updated",
+        }
+        payload = canonical_json_bytes(action)
+        submit_issuer_action(session, asset_id=ASSET_ID, payload=payload, signature=signed_message(payload))
+
+    for path in paths:
+        response = asset_cache_client.get(path, headers={"If-Modified-Since": dates[path]})
+        assert response.status_code == 200
+        assert response.headers["Last-Modified"] != dates[path]
+    assert asset_cache_client.get(f"/v2/assets/{ASSET_ID}").json()["mutable"]["custom"]["cache_test"] == "updated"
+
+
+def test_asset_cache_invalidates_filtered_and_empty_lists_after_deregistration(session_factory, asset_cache_client):
+    from registry_api.legacy_assets import deregister_legacy_asset
+
+    paths = ["/", "/index.json", "/v2/assets/all.json", "/v2/assets?ticker=V2ASSET", "/v2/assets?page=2&page_size=1", "/v2/assets?name=NoMatch"]
+    with session_factory() as session:
+        register_v2_asset(session, v2_request(pubkey=SIGNING_PUBKEY))
+        asset = session.query(Asset).filter_by(asset_id=ASSET_ID).one()
+        asset.updated_at = datetime(2020, 1, 1, tzinfo=UTC)
+        session.commit()
+
+    dates = {path: asset_cache_client.get(path).headers["Last-Modified"] for path in paths}
+    with session_factory() as session:
+        deregister_legacy_asset(session, ASSET_ID, signed_message(f"remove {ASSET_ID} from registry".encode()))
+
+    for path in paths:
+        response = asset_cache_client.get(path, headers={"If-Modified-Since": dates[path]})
+        assert response.status_code == 200
+        assert response.headers["Last-Modified"] != dates[path]
+        assert asset_cache_client.get(path, headers={"If-Modified-Since": response.headers["Last-Modified"]}).status_code == 304
+        if path.startswith("/v2/assets?"):
+            assert response.json()["items"] == []
+        else:
+            assert response.json() == {}
+    for path in [f"/{ASSET_ID}", f"/v2/assets/{ASSET_ID}"]:
+        assert asset_cache_client.get(path, headers={"If-Modified-Since": dates["/"]}).status_code == 404
