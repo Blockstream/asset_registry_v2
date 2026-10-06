@@ -4,12 +4,14 @@ from fastapi import FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
+from psycopg.errors import LockNotAvailable
+from sqlalchemy.exc import OperationalError
 
 from registry_api.api.health import router as health_router
 from registry_api.api.legacy import router as legacy_router
 from registry_api.api.v2 import router as v2_router
 from registry_api.compression import GZipMiddleware
-from registry_api.errors import ErrorResponse, RegistryError
+from registry_api.errors import ErrorCode, ErrorResponse, RegistryError
 from registry_api.observability import RequestLoggingMiddleware, configure_logging
 from registry_api.openapi import install_openapi_builder
 from registry_api.openapi_metadata import (
@@ -67,6 +69,21 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
             content=ErrorResponse(
                 error=exc.error, message=exc.message, details=exc.details
             ).model_dump(exclude_none=True),
+        )
+
+    @app.exception_handler(OperationalError)
+    async def database_error_handler(
+        _request: Request, exc: OperationalError
+    ) -> JSONResponse:
+        if not isinstance(exc.orig, LockNotAvailable):
+            raise exc
+        return JSONResponse(
+            status_code=503,
+            content=ErrorResponse(
+                error=ErrorCode.DATABASE_BUSY,
+                message="database is busy; retry later",
+            ).model_dump(exclude_none=True),
+            headers={"Retry-After": "1"},
         )
 
     @app.exception_handler(RequestValidationError)
