@@ -79,4 +79,17 @@ During migration, supported legacy writes can be shadow-forwarded to the origina
 
 SQLAlchemy models use UUID keys, explicit constraints, and normalized child tables. Service-layer writes are transactional and roll back on failure. Serialized fragments are cached for large compatibility listings and refreshed with the underlying asset state.
 
+Asset JSON reads (`GET /`, `/index.json`, `/{asset_id}`, `/v2/assets`,
+`/v2/assets/all.json`, and `/v2/assets/{asset_id}`) send `Last-Modified` and
+`Cache-Control: no-cache`. Clients can send the returned HTTP date in
+`If-Modified-Since` to receive a bodyless `304 Not Modified` when unchanged.
+Individual lookups use the active asset's `updated_at`; listings use the latest
+`updated_at` across all assets, including deregistered records. This conservatively
+invalidates every filter and page on any asset change, including removals. An
+registry with no stored records has no known modification date and returns `200` without
+`Last-Modified`. Invalid or repeated dates are ignored, and `If-None-Match` takes
+precedence over date validation. Dates have HTTP's one-second precision; multiple
+changes within the same second can share a validator. These headers apply to JSON
+reads; content-addressed PNG icons retain their existing ETag behavior.
+
 See [`schema.md`](schema.md) for the database design, [`docs/configuration.md`](docs/configuration.md) for runtime settings, and [`docs/deployment.md`](docs/deployment.md) for operational guidance.

@@ -1,12 +1,14 @@
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Request, Response, status
 from sqlalchemy.orm import Session
 from starlette.convertors import CONVERTOR_TYPES, Convertor
 from starlette.responses import StreamingResponse
 
+from registry_api.api.asset_cache import IfModifiedSince, prepare_asset_read
 from registry_api.api.query_validation import reject_unknown_query_parameters
 from registry_api.api.responses import (
+    ASSET_CACHE_RESPONSES,
     RATE_LIMIT_ERROR_RESPONSES,
     STANDARD_ERROR_RESPONSES,
 )
@@ -113,9 +115,11 @@ def register_asset_legacy_root(
     operation_id="getAllAssetsLegacyRoot",
     summary="Legacy all-assets endpoint",
     responses={
+        **ASSET_CACHE_RESPONSES,
         200: {
             "description": "Legacy asset listing keyed by asset ID.",
             "content": {"application/json": {"schema": {"type": "object"}}},
+            "headers": ASSET_CACHE_RESPONSES[200]["headers"],
         }
     },
 )
@@ -124,16 +128,28 @@ def register_asset_legacy_root(
     operation_id="getAllAssetsLegacyIndex",
     summary="Legacy all-assets JSON endpoint",
     responses={
+        **ASSET_CACHE_RESPONSES,
         200: {
             "description": "Legacy asset listing keyed by asset ID.",
             "content": {"application/json": {"schema": {"type": "object"}}},
+            "headers": ASSET_CACHE_RESPONSES[200]["headers"],
         }
     },
 )
-def list_assets_legacy_root() -> StreamingResponse:
+def list_assets_legacy_root(
+    request: Request,
+    response: Response,
+    db: Annotated[Session, Depends(get_db, scope="function")],
+    if_modified_since: IfModifiedSince = None,
+) -> Response:
     """Return the legacy-compatible asset object keyed by asset ID."""
+    cached = prepare_asset_read(request, response, db, if_modified_since)
+    if cached is not None:
+        return cached
     return StreamingResponse(
-        stream_legacy_all_json_bytes(), media_type="application/json"
+        stream_legacy_all_json_bytes(),
+        media_type="application/json",
+        headers=dict(response.headers),
     )
 
 
@@ -197,12 +213,23 @@ def validate_contract_legacy(request: LegacyContractValidationRequest) -> Respon
     "/{asset_id:asset_id}",
     operation_id="getAssetLegacyRoot",
     summary="Legacy asset lookup endpoint",
+    response_model=None,
+    responses=ASSET_CACHE_RESPONSES,
 )
 def get_asset_legacy_root(
-    asset_id: AssetId, db: Annotated[Session, Depends(get_db)]
-) -> dict[str, Any]:
+    asset_id: AssetId,
+    request: Request,
+    response: Response,
+    db: Annotated[Session, Depends(get_db)],
+    if_modified_since: IfModifiedSince = None,
+) -> dict[str, Any] | Response:
     """Return one active asset in the legacy-compatible response shape."""
-    return get_legacy_asset(db, asset_id)
+    cached = prepare_asset_read(
+        request, response, db, if_modified_since, asset_id=asset_id
+    )
+    if cached is not None:
+        return cached
+    return get_legacy_asset(db, asset_id.lower())
 
 
 @router.delete(
