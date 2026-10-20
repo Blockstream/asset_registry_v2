@@ -5,14 +5,32 @@ from typing import Any
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from registry_api.asset_registration import new_registered_asset, new_registration_action
+from registry_api.asset_registration import (
+    new_registered_asset,
+    new_registration_action,
+)
 from registry_api.canonical_json import contract_hash
-from registry_api.chain import ChainVerifier, IssuanceCommitment, TrustingChainVerifier, UnconfiguredChainVerifier
+from registry_api.chain import (
+    ChainVerifier,
+    IssuanceCommitment,
+    TrustingChainVerifier,
+    UnconfiguredChainVerifier,
+)
 from registry_api.constants import Operation
-from registry_api.domain_verification import DomainProof, HttpTextFetcher, TxtResolver, verify_domain_proof
+from registry_api.domain_verification import (
+    DomainProof,
+    HttpTextFetcher,
+    TxtResolver,
+    verify_domain_proof,
+)
 from registry_api.errors import ErrorCode, RegistryError
+from registry_api.issuance import IssuanceMetadata
 from registry_api.legacy_response import legacy_registration_response
-from registry_api.models import AssetAdminAnnotation, AssetMutableMetadata, IssuerPubkeyHistory
+from registry_api.models import (
+    AssetAdminAnnotation,
+    AssetMutableMetadata,
+    IssuerPubkeyHistory,
+)
 from registry_api.registration_command import command_from_legacy_registration
 from registry_api.schemas import LegacyAssetRequest
 from registry_api.serialized_fragments import refresh_asset_serialized_fragments
@@ -35,6 +53,7 @@ def register_legacy_asset(
     resolve_txt: TxtResolver | None = None,
     make_response: Callable[[LegacyAssetRequest], dict[str, Any]] = legacy_registration_response,
     registration_contract: dict[str, Any] | None = None,
+    imported_issuance: IssuanceMetadata | None = None,
 ) -> dict[str, Any]:
     command = command_from_legacy_registration(request)
     method = command.domain_verification_method
@@ -43,7 +62,9 @@ def register_legacy_asset(
     )
     hash_hex = contract_hash(registered_contract)
 
-    _chain_verifier(enforce_chain_verification, chain_verifier).verify_issuance_commitment(
+    verified_issuance = _chain_verifier(
+        enforce_chain_verification, chain_verifier
+    ).verify_issuance_commitment(
         IssuanceCommitment(asset_id=request.asset_id, contract_hash=hash_hex)
     )
 
@@ -58,7 +79,12 @@ def register_legacy_asset(
     response = dict(make_response(request))
     response["contract"] = deepcopy(registered_contract)
 
-    asset = new_registered_asset(command)
+    issuance = verified_issuance or imported_issuance
+    asset = new_registered_asset(command, issuance=issuance)
+    response.pop("issuance_txin", None)
+    response.pop("issuance_prevout", None)
+    if issuance is not None:
+        response.update(issuance.model_dump(exclude_none=True))
 
     try:
         db.add(asset)

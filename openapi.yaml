@@ -2802,6 +2802,16 @@ components:
           title: Asset Id
         contract:
           $ref: '#/components/schemas/ContractMetadataResponse'
+        issuance_txin:
+          anyOf:
+          - $ref: '#/components/schemas/IssuanceTxin'
+          - type: 'null'
+          description: Original issuance transaction input, when known.
+        issuance_prevout:
+          anyOf:
+          - $ref: '#/components/schemas/IssuancePrevout'
+          - type: 'null'
+          description: Outpoint spent by the original issuance input, when known.
         initial_issuer_pubkey:
           type: string
           maxLength: 66
@@ -3359,6 +3369,38 @@ components:
       - status
       - proposed_at
       title: IconProposalSummary
+    IssuancePrevout:
+      properties:
+        txid:
+          type: string
+          pattern: ^[0-9a-fA-F]{64}$
+          title: Txid
+        vout:
+          type: integer
+          maximum: 4294967295.0
+          minimum: 0.0
+          title: Vout
+      type: object
+      required:
+      - txid
+      - vout
+      title: IssuancePrevout
+    IssuanceTxin:
+      properties:
+        txid:
+          type: string
+          pattern: ^[0-9a-fA-F]{64}$
+          title: Txid
+        vin:
+          type: integer
+          maximum: 4294967295.0
+          minimum: 0.0
+          title: Vin
+      type: object
+      required:
+      - txid
+      - vin
+      title: IssuanceTxin
     IssuerActionResponse:
       properties:
         status:

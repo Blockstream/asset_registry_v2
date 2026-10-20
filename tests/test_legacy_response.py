@@ -1,7 +1,6 @@
 from registry_api.legacy_response import legacy_response_from_asset
 from registry_api.models import Asset
 
-
 TESTNET_ASSET_ID = "92ac106ea13e65fe1ccae10ca69d6bd14147bb445f4c6119b8db5d027c543d15"
 COMPRESSED_PUBKEY = "03d8bb0680c89a19042a4c30f52ebb334dc075bcd53191e4de3885faa0eb6437db"
 UNCOMPRESSED_PUBKEY = (
@@ -10,7 +9,9 @@ UNCOMPRESSED_PUBKEY = (
 )
 
 
-def test_testnet_legacy_response_restores_uncompressed_contract_pubkey_for_hash_verification() -> None:
+def test_testnet_legacy_response_restores_uncompressed_contract_pubkey_for_hash_verification() -> (
+    None
+):
     """Preserve original v1 contract bytes for four legacy testnet assets.
 
     The legacy response shim exists only to keep these assets compatible with
@@ -69,3 +70,22 @@ def test_registered_response_preserves_contract_collection_value() -> None:
 
     assert response["collection"] == "Contract collection"
     assert response["contract"]["collection"] == "Contract collection"
+
+
+def test_legacy_response_retains_untyped_history_but_prefers_stored_references() -> (
+    None
+):
+    historical = {
+        "issuance_txin": {"txid": "ab" * 32, "vin": "0", "extra": True},
+        "issuance_prevout": {"txid": "cd" * 32, "vout": "1"},
+    }
+    asset = Asset(asset_id="ab" * 32)
+    assert (
+        legacy_response_from_asset(asset, historical)["issuance_txin"]
+        == historical["issuance_txin"]
+    )
+    asset.issuance_txid, asset.issuance_vin = "ef" * 32, 2
+    response = legacy_response_from_asset(asset, historical)
+    assert response["issuance_txin"] == {"txid": "ef" * 32, "vin": 2}
+    assert response["issuance_prevout"] == historical["issuance_prevout"]
+    assert historical["issuance_txin"]["vin"] == "0"

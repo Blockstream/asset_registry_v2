@@ -13,7 +13,6 @@ from registry_api.chain import (
 )
 from registry_api.errors import RegistryError
 
-
 ISSUANCE_FIXTURE = Path("tests/fixtures/liquid-taproot-issuance.hex")
 ISSUANCE_TXID = "d81572734b18580c8371c0ffe539c443642233035766b09bb4012bfdaed44392"
 ISSUANCE_PREVOUT_TXID = (
@@ -142,11 +141,15 @@ def test_esplora_chain_verifier_accepts_fixture_data() -> None:
         "https://example.invalid", get_json=get_json, get_text=get_text
     )
 
-    verifier.verify_issuance_commitment(
+    result = verifier.verify_issuance_commitment(
         IssuanceCommitment(
             asset_id=ISSUED_ASSET_ID, contract_hash=ISSUANCE_CONTRACT_HASH
         )
     )
+    assert result.model_dump() == {
+        "issuance_txin": {"txid": ISSUANCE_TXID, "vin": 0},
+        "issuance_prevout": {"txid": ISSUANCE_PREVOUT_TXID, "vout": ISSUANCE_PREVOUT_VOUT},
+    }
 
 
 def test_esplora_chain_verifier_rejects_unconfirmed_issuance() -> None:

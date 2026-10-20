@@ -45,6 +45,10 @@ One registry record for a Liquid asset listing. `asset_id` is indexed but not th
 | `name` | `text` | Required. Copied from `contract.name`; indexed. |
 | `ticker` | `text` | Nullable for legacy v0 assets without a ticker; required by the v2 draft; indexed. |
 | `precision` | `smallint` | Required. Validate range in application. |
+| `issuance_txid` | `varchar(64)` | Nullable original issuance transaction ID, lowercase hex; paired with `issuance_vin`. |
+| `issuance_vin` | `bigint` | Nullable issuance input index, from 0 through 4294967295. |
+| `issuance_prevout_txid` | `varchar(64)` | Nullable transaction ID of the outpoint spent by the issuance input; paired with `issuance_prevout_vout`. |
+| `issuance_prevout_vout` | `bigint` | Nullable previous output index, from 0 through 4294967295. |
 | `contract_extra_fields` | `jsonb` | Required object, default `{}`. Stores legacy contract fields that are contract-hash-relevant but not first-class v2 columns. Native v2 registrations store `{}`. |
 | `domain_verification_method` | `text` | Required, default `http`. `dns` or `http`. |
 | `initial_issuer_pubkey` | `char(66)` | Required compressed secp256k1 public key. |
@@ -63,6 +67,10 @@ check (asset_id ~ '^[0-9a-f]{64}$')
 check (initial_issuer_pubkey ~ '^(02|03)[0-9a-f]{64}$')
 check (current_issuer_pubkey ~ '^(02|03)[0-9a-f]{64}$')
 check (contract_version >= 0)
+check ((issuance_txid is null) = (issuance_vin is null)
+       and issuance_txid ~ '^[0-9a-f]{64}$' and issuance_vin between 0 and 4294967295)
+check ((issuance_prevout_txid is null) = (issuance_prevout_vout is null)
+       and issuance_prevout_txid ~ '^[0-9a-f]{64}$' and issuance_prevout_vout between 0 and 4294967295)
 check (jsonb_typeof(contract_extra_fields) = 'object')
 check (mutable_schema_version >= 1)
 ```

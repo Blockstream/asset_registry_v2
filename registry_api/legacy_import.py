@@ -19,6 +19,7 @@ from registry_api.canonical_json import contract_hash
 from registry_api.chain import derive_asset_id
 from registry_api.db import SessionLocal
 from registry_api.errors import ErrorCode, RegistryError
+from registry_api.issuance import IssuanceMetadata
 from registry_api.models import Asset
 from registry_api.registration import register_legacy_asset
 from registry_api.schemas import LegacyAssetRequest
@@ -104,7 +105,7 @@ def import_legacy_assets(
 
     for processed, (key, value) in enumerate(payload.items(), start=1):
         try:
-            request, registered_response = legacy_request_from_listing_item(
+            request, registered_response, issuance = _parse_listing_item(
                 key,
                 value,
                 verify_imported_contract_identity=verify_imported_contract_identity,
@@ -149,6 +150,7 @@ def import_legacy_assets(
                 enforce_domain_verification=False,
                 make_response=lambda _request, response=registered_response: response,
                 registration_contract=registered_response["contract"],
+                imported_issuance=issuance,
             )
         except RegistryError as exc:
             if exc.error == ErrorCode.ASSET_CONFLICT:
@@ -214,6 +216,20 @@ def legacy_request_from_listing_item(
     *,
     verify_imported_contract_identity: bool = True,
 ) -> tuple[LegacyAssetRequest, dict[str, Any]]:
+    request, response, _issuance = _parse_listing_item(
+        asset_id_key,
+        value,
+        verify_imported_contract_identity=verify_imported_contract_identity,
+    )
+    return request, response
+
+
+def _parse_listing_item(
+    asset_id_key: str,
+    value: Any,
+    *,
+    verify_imported_contract_identity: bool = True,
+) -> tuple[LegacyAssetRequest, dict[str, Any], IssuanceMetadata]:
     if not isinstance(value, dict):
         raise TypeError("legacy asset entry must be an object")
 
@@ -236,9 +252,11 @@ def legacy_request_from_listing_item(
         _verify_imported_contract_identity(imported_item)
 
     registered_response = deepcopy(imported_item)
+    # Validate references even during dry runs; missing historical values remain nullable.
+    issuance = IssuanceMetadata.from_payload(registered_response)
     _compress_legacy_issuer_pubkeys(imported_item)
     request = LegacyAssetRequest.model_validate(imported_item)
-    return request, registered_response
+    return request, registered_response, issuance
 
 
 def _compress_legacy_issuer_pubkeys(response: dict[str, Any]) -> None:

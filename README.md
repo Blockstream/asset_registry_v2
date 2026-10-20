@@ -59,6 +59,29 @@ Regenerate the OpenAPI snapshot after changing routes or schemas:
 
 FastAPI and Pydantic are the source of truth. Do not edit `openapi.yaml` manually.
 
+## Backfill Missing Issuance References
+
+Schema upgrades use local history and never call Esplora. Older v2 registrations
+may have no saved issuance references. After applying all migrations, fetch and
+verify those missing references explicitly using the configured
+`ASSET_REGISTRY_ESPLORA_URL` and `ASSET_REGISTRY_DATABASE_URL`:
+
+```bash
+.venv/bin/python -m registry_api.issuance_backfill --dry-run --limit 10
+.venv/bin/python -m registry_api.issuance_backfill
+```
+
+The dry run makes network requests but writes nothing. The command checks the
+preserved registration contract hash, updates both response caches, and preserves
+asset timestamps and audit actions. Failures are logged per asset and yield a
+nonzero exit status; reruns retry missing references and skip completed assets.
+Conflicts with existing references are reported without overwriting them.
+
+Revision `0016` also reconciles recoverable legacy contract data for databases
+that already applied older `0014`/`0015` implementations. Review migration warnings
+for unresolvable rows; data erased from every historical source requires recovery
+from a trusted backup or original listing.
+
 ## Asset Icons
 
 V2 asset responses expose an approved icon as a registry-relative,

@@ -33,6 +33,7 @@ from registry_api.domain_verification import (
     verify_pubkey_bound_domain_signature,
 )
 from registry_api.errors import ErrorCode, RegistryError
+from registry_api.issuance import issuance_payload_from_asset
 from registry_api.models import (
     Action,
     Asset,
@@ -116,7 +117,7 @@ def register_v2_asset(
         )
 
     hash_hex = contract_hash(request.contract.model_dump(exclude_none=True))
-    _chain_verifier(
+    issuance = _chain_verifier(
         enforce_chain_verification, chain_verifier
     ).verify_issuance_commitment(
         IssuanceCommitment(asset_id=request.asset_id, contract_hash=hash_hex)
@@ -139,7 +140,7 @@ def register_v2_asset(
         )
 
     command = command_from_v2_registration(request, initial_pubkey)
-    asset = new_registered_asset(command)
+    asset = new_registered_asset(command, issuance=issuance)
 
     try:
         db.add(asset)
@@ -430,6 +431,7 @@ def asset_response_from_row(db: Session, asset: Asset) -> AssetResponse:
     return AssetResponse(
         asset_id=asset.asset_id,
         contract=v2_response_contract_from_asset(asset),
+        **issuance_payload_from_asset(asset),
         initial_issuer_pubkey=asset.initial_issuer_pubkey,
         initial_issuer_pubkey_source=asset.initial_issuer_pubkey_source,
         current_issuer_pubkey=asset.current_issuer_pubkey,
@@ -717,6 +719,7 @@ def _asset_response_payload(
     payload = {
         "asset_id": asset.asset_id,
         "contract": _contract_payload(asset),
+        **issuance_payload_from_asset(asset),
         "initial_issuer_pubkey": asset.initial_issuer_pubkey,
         "initial_issuer_pubkey_source": asset.initial_issuer_pubkey_source,
         "current_issuer_pubkey": asset.current_issuer_pubkey,

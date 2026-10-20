@@ -65,6 +65,8 @@ Audit entries keep registry-observed metadata—such as `audit_id`, server recei
 
 Registration can verify the issuance commitment through an Esplora-compatible Liquid API. It can also verify issuer domain control through HTTP or DNS proofs. V2 supports a pubkey-bound domain proof whose key must match the resolved initial issuer key.
 
+Successful chain verification returns the original issuance input and its spent outpoint. Both registration flows persist these references as paired transaction-ID/index columns on `assets`; trusted legacy imports persist their saved references without network calls. Public request extras cannot override verified references. The references are top-level `issuance_txin: {txid, vin}` and `issuance_prevout: {txid, vout}` objects in legacy and v2 responses. Unknown references are represented as null in v2 responses. Legacy responses retain raw saved historical fields if typed references are unavailable, and otherwise omit unknown references. Validated stored references take precedence. External reference objects may contain extension fields, which are ignored during validation.
+
 Domain verification is an acceptance-time registry check, not a durable independent witness. Audit entries show that the registry accepted the proof but do not prove what a domain served at that historical moment. Stronger guarantees would require DNSSEC, transparency infrastructure, zkTLS, or a separate notary system.
 
 External verification failures are kept distinct from invalid submitted proofs so operators and clients can distinguish dependency outages from rejected registrations.
@@ -72,6 +74,10 @@ External verification failures are kept distinct from invalid submitted proofs s
 ## Legacy Compatibility
 
 Legacy contract fields that are not first-class v2 columns are retained in `contract_extra_fields`, allowing migrated records to reconstruct their original contract without allowing arbitrary fields in native v2 contracts.
+
+The issuance-reference schema migration backfills each reference from the top-level response saved in the earliest legacy registration action, falling back to cached legacy JSON. Contract extras are not a source of issuance references. It validates shapes, normalizes transaction IDs, reports missing/malformed/conflicting data counts, and updates cached projections without network access. This backfill leaves original contracts, contract extras, historical actions, and asset timestamps unchanged. References absent from local history remain nullable until the explicit chain maintenance command fills them.
+
+Revision `0016_reconcile_legacy_data` repeats the frozen contract repair for databases that already applied an earlier `0014`, restores recoverable genuine nulls and original issuer keys, and normalizes cached v2 timestamps to the application format. Contract candidates must match issuance identity, or the preserved hash when no prevout exists. Unresolvable rows and hash-chained actions requiring edits are logged and left unchanged. Fields erased from every historical source cannot be reconstructed safely. These data corrections preserve asset timestamps and are not undone on downgrade.
 
 During migration, supported legacy writes can be shadow-forwarded to the original registry after local persistence. Shadow outcomes are logged, and the compatibility layer preserves legacy status behavior where practical. A v1-to-v2 migration changes the registry model only; it does not recreate or alter the chain issuance.
 
