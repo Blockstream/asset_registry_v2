@@ -21,8 +21,8 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from registry_api.db import Base
 from registry_api.constants import IconProposalStatus
+from registry_api.db import Base
 
 audit_sequence_global = Sequence("audit_sequence_global")
 
@@ -51,6 +51,10 @@ class Asset(Base, TimestampMixin):
     name: Mapped[str] = mapped_column(Text, nullable=False)
     ticker: Mapped[str | None] = mapped_column(Text, nullable=True)
     precision: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    issuance_txid: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    issuance_vin: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    issuance_prevout_txid: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    issuance_prevout_vout: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     contract_extra_fields: Mapped[dict] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )
@@ -109,6 +113,16 @@ class Asset(Base, TimestampMixin):
             name="assets_current_pubkey_format_chk",
         ),
         CheckConstraint("contract_version >= 0", name="assets_contract_version_chk"),
+        CheckConstraint(
+            "(issuance_txid IS NULL) = (issuance_vin IS NULL) AND "
+            "issuance_txid ~ '^[0-9a-f]{64}$' AND issuance_vin BETWEEN 0 AND 4294967295",
+            name="assets_issuance_txin_chk",
+        ),
+        CheckConstraint(
+            "(issuance_prevout_txid IS NULL) = (issuance_prevout_vout IS NULL) AND "
+            "issuance_prevout_txid ~ '^[0-9a-f]{64}$' AND issuance_prevout_vout BETWEEN 0 AND 4294967295",
+            name="assets_issuance_prevout_chk",
+        ),
         CheckConstraint(
             "jsonb_typeof(contract_extra_fields) = 'object'",
             name="assets_contract_extra_fields_object_chk",

@@ -5,8 +5,10 @@ from typing import NoReturn, Protocol
 
 import httpx
 import wallycore as wally
+from pydantic import ValidationError
 
 from registry_api.errors import ErrorCode, RegistryError
+from registry_api.issuance import IssuanceMetadata
 
 logger = logging.getLogger(__name__)
 
@@ -20,12 +22,16 @@ class IssuanceCommitment:
 
 
 class ChainVerifier(Protocol):
-    def verify_issuance_commitment(self, commitment: IssuanceCommitment) -> None:
+    def verify_issuance_commitment(
+        self, commitment: IssuanceCommitment
+    ) -> IssuanceMetadata | None:
         ...
 
 
 class UnconfiguredChainVerifier:
-    def verify_issuance_commitment(self, commitment: IssuanceCommitment) -> None:
+    def verify_issuance_commitment(
+        self, commitment: IssuanceCommitment
+    ) -> IssuanceMetadata | None:
         raise RegistryError(
             ErrorCode.CHAIN_VERIFIER_NOT_CONFIGURED,
             "chain issuance commitment verification is not configured",
@@ -36,7 +42,9 @@ class UnconfiguredChainVerifier:
 class TrustingChainVerifier:
     """Development-only verifier for tests and local wiring before chain integration."""
 
-    def verify_issuance_commitment(self, commitment: IssuanceCommitment) -> None:
+    def verify_issuance_commitment(
+        self, commitment: IssuanceCommitment
+    ) -> IssuanceMetadata | None:
         return None
 
 
@@ -112,16 +120,23 @@ class EsploraChainVerifier:
         self._get_json = get_json
         self._get_text = get_text
 
-    def verify_issuance_commitment(self, commitment: IssuanceCommitment) -> None:
+    def verify_issuance_commitment(self, commitment: IssuanceCommitment) -> IssuanceMetadata:
         asset_data = self._json(f"/asset/{commitment.asset_id}")
-        issuance_txin = asset_data.get("issuance_txin") or {}
-        issuance_prevout = asset_data.get("issuance_prevout") or {}
-        txid = issuance_txin.get("txid")
-        vin = issuance_txin.get("vin")
-        prevout_txid = issuance_prevout.get("txid")
-        prevout_vout = issuance_prevout.get("vout")
-        if not isinstance(txid, str) or not isinstance(vin, int) or not isinstance(prevout_txid, str) or not isinstance(prevout_vout, int):
-            raise RegistryError(ErrorCode.CHAIN_VERIFICATION_FAILED, "Esplora asset response is missing issuance metadata")
+        try:
+            issuance = IssuanceMetadata.from_payload(asset_data)
+        except ValidationError as exc:
+            raise RegistryError(
+                ErrorCode.CHAIN_VERIFICATION_FAILED,
+                "Esplora asset response has invalid issuance metadata",
+            ) from exc
+        if issuance.issuance_txin is None or issuance.issuance_prevout is None:
+            raise RegistryError(
+                ErrorCode.CHAIN_VERIFICATION_FAILED,
+                "Esplora asset response is missing issuance metadata",
+            )
+        txid, vin = issuance.issuance_txin.txid, issuance.issuance_txin.vin
+        prevout_txid = issuance.issuance_prevout.txid
+        prevout_vout = issuance.issuance_prevout.vout
 
         tx_hex = self._text(f"/tx/{txid}/hex")
         status = self._json(f"/tx/{txid}/status")
@@ -141,6 +156,7 @@ class EsploraChainVerifier:
                 "asset id does not match issuance commitment",
                 {"expected_asset_id": derived_asset_id, "actual_asset_id": commitment.asset_id},
             )
+        return issuance
 
     def _json(self, path: str) -> dict:
         if self._get_json is not None:

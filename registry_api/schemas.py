@@ -15,13 +15,14 @@ from pydantic_core import PydanticCustomError
 from typing_extensions import TypeAliasType
 
 from registry_api.constants import Actor, IconProposalStatus, Operation
+from registry_api.issuance import IssuancePrevout, IssuanceTxin
 from registry_api.settings import get_settings
 from registry_api.validation import (
+    ADMIN_PERMISSIONS,
     ASSET_TYPES,
     DOMAIN_PATTERN,
     DOMAIN_VERIFICATION_METHODS,
     INITIAL_ISSUER_PUBKEY_SOURCES,
-    ADMIN_PERMISSIONS,
     normalize_asset_id,
     normalize_domain,
     normalize_pubkey,
@@ -543,6 +544,13 @@ class AssetIconDescriptor(StrictModel):
 class AssetResponse(StrictModel):
     asset_id: AssetId
     contract: ContractMetadataResponse
+    issuance_txin: IssuanceTxin | None = Field(
+        default=None, description="Original issuance transaction input, when known."
+    )
+    issuance_prevout: IssuancePrevout | None = Field(
+        default=None,
+        description="Outpoint spent by the original issuance input, when known.",
+    )
     initial_issuer_pubkey: Pubkey
     initial_issuer_pubkey_source: str
     current_issuer_pubkey: Pubkey

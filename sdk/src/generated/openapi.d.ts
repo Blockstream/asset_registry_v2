@@ -616,6 +616,10 @@ export interface components {
             /** Asset Id */
             asset_id: string;
             contract: components["schemas"]["ContractMetadataResponse"];
+            /** @description Original issuance transaction input, when known. */
+            issuance_txin?: components["schemas"]["IssuanceTxin"] | null;
+            /** @description Outpoint spent by the original issuance input, when known. */
+            issuance_prevout?: components["schemas"]["IssuancePrevout"] | null;
             /** Initial Issuer Pubkey */
             initial_issuer_pubkey: string;
             /** Initial Issuer Pubkey Source */
@@ -880,6 +884,20 @@ export interface components {
             decided_at?: string | null;
             /** Obsoleted At */
             obsoleted_at?: string | null;
+        };
+        /** IssuancePrevout */
+        IssuancePrevout: {
+            /** Txid */
+            txid: string;
+            /** Vout */
+            vout: number;
+        };
+        /** IssuanceTxin */
+        IssuanceTxin: {
+            /** Txid */
+            txid: string;
+            /** Vin */
+            vin: number;
         };
         /** IssuerActionResponse */
         IssuerActionResponse: {

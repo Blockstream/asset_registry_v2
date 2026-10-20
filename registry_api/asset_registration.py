@@ -1,11 +1,15 @@
 from registry_api.action_writer import new_action
 from registry_api.constants import Actor
+from registry_api.issuance import IssuanceMetadata
 from registry_api.models import Action, Asset
 from registry_api.registration_command import RegisterAssetCommand
 
 
-def new_registered_asset(command: RegisterAssetCommand) -> Asset:
+def new_registered_asset(
+    command: RegisterAssetCommand, *, issuance: IssuanceMetadata | None = None
+) -> Asset:
     return Asset(
+        **(issuance or IssuanceMetadata()).asset_columns(),
         asset_id=command.asset_id,
         contract_version=command.contract_version,
         domain=command.domain,

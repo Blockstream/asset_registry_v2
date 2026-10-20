@@ -1,9 +1,9 @@
 from typing import Any
 
+from registry_api.contracts import legacy_contract_from_asset
+from registry_api.issuance import IssuanceMetadata
 from registry_api.models import Asset
 from registry_api.schemas import LegacyAssetRequest
-from registry_api.contracts import legacy_contract_from_asset
-
 
 TESTNET_LEGACY_UNCOMPRESSED_ISSUER_PUBKEYS = {
     asset_id: (
@@ -43,6 +43,9 @@ def legacy_response_from_asset(
     if registered_response is not None:
         response = dict(registered_response)
         response["asset_id"] = asset.asset_id
+        response.pop("issuance_txin", None)
+        response.pop("issuance_prevout", None)
+        response.update(IssuanceMetadata.from_asset(asset).model_dump(exclude_none=True))
         _restore_legacy_uncompressed_issuer_pubkey(response, asset.asset_id)
         return response
 
@@ -60,6 +63,7 @@ def legacy_response_from_asset(
         response["issuer_pubkey"] = asset.initial_issuer_pubkey
     if asset.ticker:
         response["ticker"] = asset.ticker
+    response.update(IssuanceMetadata.from_asset(asset).model_dump(exclude_none=True))
     _restore_legacy_uncompressed_issuer_pubkey(response, asset.asset_id)
     return response
 
