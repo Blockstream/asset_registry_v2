@@ -100,6 +100,8 @@ def register_asset_legacy_root(
             raise
         local_error = exc
         registration_response = legacy_registration_response(request)
+    finally:
+        chain_verifier.close()
 
     shadow_outcome = ensure_legacy_registration_written(settings, request)
     if shadow_outcome.legacy_status_code is not None:

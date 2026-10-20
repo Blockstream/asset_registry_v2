@@ -13,7 +13,6 @@ from registry_api.chain import (
 )
 from registry_api.errors import RegistryError
 
-
 ISSUANCE_FIXTURE = Path("tests/fixtures/liquid-taproot-issuance.hex")
 ISSUANCE_TXID = "d81572734b18580c8371c0ffe539c443642233035766b09bb4012bfdaed44392"
 ISSUANCE_PREVOUT_TXID = (
@@ -142,11 +141,18 @@ def test_esplora_chain_verifier_accepts_fixture_data() -> None:
         "https://example.invalid", get_json=get_json, get_text=get_text
     )
 
-    verifier.verify_issuance_commitment(
+    result = verifier.verify_issuance_commitment(
         IssuanceCommitment(
             asset_id=ISSUED_ASSET_ID, contract_hash=ISSUANCE_CONTRACT_HASH
         )
     )
+    assert result.model_dump() == {
+        "issuance_txin": {"txid": ISSUANCE_TXID, "vin": 0},
+        "issuance_prevout": {
+            "txid": ISSUANCE_PREVOUT_TXID,
+            "vout": ISSUANCE_PREVOUT_VOUT,
+        },
+    }
 
 
 def test_esplora_chain_verifier_rejects_unconfirmed_issuance() -> None:
@@ -256,6 +262,31 @@ def test_esplora_connection_error_is_chain_verifier_unreachable(monkeypatch) -> 
     assert exc_info.value.status_code == 503
 
 
+@pytest.mark.parametrize("body", [None, [], "text"])
+def test_esplora_non_object_json_is_service_error(monkeypatch, body) -> None:
+    original_client = httpx.Client
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=body)
+
+    monkeypatch.setattr(
+        httpx,
+        "Client",
+        lambda **kwargs: original_client(
+            transport=httpx.MockTransport(handler), **kwargs
+        ),
+    )
+    verifier = EsploraChainVerifier("https://example.invalid")
+
+    with pytest.raises(RegistryError) as exc_info:
+        verifier.verify_issuance_commitment(
+            IssuanceCommitment(asset_id="00" * 32, contract_hash="11" * 32)
+        )
+
+    assert exc_info.value.error == "chain_verifier_error"
+    assert exc_info.value.status_code == 503
+
+
 def test_esplora_non_404_http_error_is_service_error(monkeypatch) -> None:
     original_client = httpx.Client
 
@@ -279,3 +310,18 @@ def test_esplora_non_404_http_error_is_service_error(monkeypatch) -> None:
     assert exc_info.value.error == "chain_verifier_error"
     assert exc_info.value.status_code == 503
     assert "not a problem with the submitted asset" in exc_info.value.message
+
+
+def test_esplora_verifier_reuses_client_and_closes() -> None:
+    client = httpx.Client(transport=httpx.MockTransport(lambda _r: httpx.Response(404)))
+    verifier = EsploraChainVerifier("https://example.invalid", client=client)
+    assert verifier.client is client
+    verifier.close()
+    assert not client.is_closed
+    client.close()
+
+    with EsploraChainVerifier("https://example.invalid") as auto_verifier:
+        internal_client = auto_verifier.client
+        assert not internal_client.is_closed
+        assert auto_verifier.client is internal_client
+    assert internal_client.is_closed

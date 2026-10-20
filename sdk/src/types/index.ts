@@ -11,6 +11,8 @@ export type V2AssetContractEntity = components["schemas"]["ContractEntity"];
 export type V2AssetContract = components["schemas"]["ContractMetadata"];
 export type V2Asset = components["schemas"]["RegisterAssetRequest"];
 export type AssetResponse = components["schemas"]["AssetResponse"];
+export type IssuanceTxin = components["schemas"]["IssuanceTxin"];
+export type IssuancePrevout = components["schemas"]["IssuancePrevout"];
 export type AssetListResponse = components["schemas"]["AssetListResponse"];
 export type LegacyAsset = components["schemas"]["LegacyAssetRequest"];
 
@@ -21,6 +23,8 @@ export interface LegacyAssetResponse extends Record<string, unknown> {
   name: string;
   precision: number;
   entity: { domain: string };
+  issuance_txin?: IssuanceTxin;
+  issuance_prevout?: IssuancePrevout;
   ticker?: string;
   issuer_pubkey?: string;
 }
