@@ -8,7 +8,7 @@ import wallycore as wally
 from sqlalchemy import create_engine, delete, text
 from sqlalchemy.orm import sessionmaker
 
-from registry_api.canonical_json import canonical_json_bytes
+from registry_api.canonical_json import canonical_json_bytes, contract_hash
 from registry_api.domain_verification import (
     expected_http_proof,
     expected_pubkey_bound_domain_proof,
@@ -19,8 +19,12 @@ from registry_api.models import Action, Asset, AssetCategoryTag
 from registry_api.schemas import RegisterAssetRequest
 from registry_api.serialized_fragments import refresh_asset_serialized_fragments
 from registry_api.signatures import _bitcoin_signed_message_hash
-from registry_api.v2_assets import all_v2_assets_json_bytes, get_v2_asset, register_v2_asset, search_v2_assets
-
+from registry_api.v2_assets import (
+    all_v2_assets_json_bytes,
+    get_v2_asset,
+    register_v2_asset,
+    search_v2_assets,
+)
 
 pytestmark = pytest.mark.skipif(
     not os.getenv("ASSET_REGISTRY_TEST_DATABASE_URL"),
@@ -122,6 +126,33 @@ def test_v2_registration_persists_normalized_metadata_and_returns_asset(session_
     assert row["operation"] == "register"
     assert row["venue"] == "sideswap"
     assert row["tag"] == "stablecoin"
+
+
+def test_v2_registration_preserves_contract_hash_in_all_responses(session_factory) -> None:
+    request = v2_request(pubkey=PUBKEY.upper())
+    expected_contract = request.contract.model_dump(mode="json")
+    expected_hash = contract_hash(expected_contract)
+
+    with session_factory() as session:
+        registered = register_v2_asset(session, request)
+
+    with session_factory() as session:
+        asset = session.query(Asset).filter_by(asset_id=ASSET_ID).one()
+        action = session.query(Action).filter_by(asset_uuid=asset.asset_uuid).one()
+        assert action.action["contract"] == expected_contract
+        assert action.action["contract_hash"] == expected_hash
+        found = get_v2_asset(session, ASSET_ID)
+        listed = search_v2_assets(session).items[0]
+        all_json = json.loads(all_v2_assets_json_bytes(session))[ASSET_ID]
+
+    for payload in (
+        registered.model_dump(mode="json"),
+        found.model_dump(mode="json"),
+        listed.model_dump(mode="json"),
+        all_json,
+    ):
+        assert payload["contract"] == expected_contract
+        assert contract_hash(payload["contract"]) == expected_hash
 
 
 def test_v2_all_json_uses_cached_serialized_fragments(session_factory) -> None:

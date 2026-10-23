@@ -74,14 +74,6 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
         _request: Request, exc: RequestValidationError
     ) -> Response:
         errors = exc.errors()
-        if len(errors) == 1 and errors[0].get("type") == "issuer_key_policy_conflict":
-            return JSONResponse(
-                status_code=409,
-                content=ErrorResponse(
-                    error="validation_error",
-                    message=errors[0]["msg"],
-                ).model_dump(exclude_none=True),
-            )
         content = json.dumps(
             {"detail": jsonable_encoder(errors)},
             ensure_ascii=True,

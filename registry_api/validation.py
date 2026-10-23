@@ -7,7 +7,7 @@ from registry_api.errors import ErrorCode, RegistryError
 
 ASSET_ID_RE = re.compile(r"^[0-9a-f]{64}$")
 PUBKEY_RE = re.compile(r"^(02|03)[0-9a-f]{64}$")
-TICKER_RE = re.compile(r"^[A-Za-z0-9.\-]{1,24}$")
+TICKER_RE = re.compile(r"^[A-Za-z0-9.\-]{3,24}$")
 LEGACY_TICKER_RE = re.compile(r"^[A-Za-z0-9.\-]{3,24}$")
 ASCII_NAME_RE = re.compile(r"^[\x00-\x7f]{1,255}$")
 DOMAIN_LABEL_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
@@ -83,7 +83,7 @@ def reject_nul_characters(value: object, field: str) -> None:
             reject_nul_characters(item, field)
 
 
-def validate_precision(precision: int, *, maximum: int = 18) -> int:
+def validate_precision(precision: int, *, maximum: int = 8) -> int:
     if precision < 0 or precision > maximum:
         raise ValueError(f"precision must be between 0 and {maximum}")
     return precision

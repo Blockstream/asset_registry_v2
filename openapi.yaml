@@ -539,20 +539,6 @@ paths:
                     ticker: casas
                     version: 2
                   domain_verification_method: dns
-              legacyContract:
-                summary: Register an asset with legacy contract metadata
-                value:
-                  asset_id: aa909f1b00000000000000000000000000000000000000000000000000000000
-                  contract:
-                    entity:
-                      domain: proof.liquidtestnet.example.net
-                    issuer_pubkey: 0382375b3986feb6f33d96f86c4bc5e09f53d7b3e4eb5b90eeca6d487b7eb40a65
-                    name: casas
-                    precision: 0
-                    ticker: casas
-                    version: 1
-                  domain_verification_method: dns
-                  initial_issuer_pubkey: 0382375b3986feb6f33d96f86c4bc5e09f53d7b3e4eb5b90eeca6d487b7eb40a65
       responses:
         '201':
           description: Successful Response
@@ -2957,35 +2943,28 @@ components:
           title: Name
         precision:
           type: integer
-          maximum: 18.0
+          maximum: 8.0
           minimum: 0.0
           title: Precision
         ticker:
           type: string
           maxLength: 24
-          minLength: 1
+          minLength: 3
           pattern: ^[A-Za-z0-9.\-]+$
           title: Ticker
         version:
           type: integer
-          minimum: 1.0
+          const: 2
           title: Version
+          description: Immutable contract format version. Required and must be the JSON integer 2 for new registrations through
+            POST /v2/assets. Version 1 and future versions are not supported. Migrated legacy assets retain version 0 in v2
+            responses.
         initial_issuer_pubkey:
-          anyOf:
-          - type: string
-            maxLength: 66
-            minLength: 66
-            pattern: ^(02|03)[0-9a-fA-F]{64}$
-          - type: 'null'
+          type: string
+          maxLength: 66
+          minLength: 66
+          pattern: ^(02|03)[0-9a-fA-F]{64}$
           title: Initial Issuer Pubkey
-        issuer_pubkey:
-          anyOf:
-          - type: string
-            maxLength: 66
-            minLength: 66
-            pattern: ^(02|03)[0-9a-fA-F]{64}$
-          - type: 'null'
-          title: Issuer Pubkey
       additionalProperties: false
       type: object
       required:
@@ -2994,6 +2973,7 @@ components:
       - precision
       - ticker
       - version
+      - initial_issuer_pubkey
       title: ContractMetadata
     ContractMetadataResponse:
       properties:
@@ -3006,14 +2986,14 @@ components:
           title: Name
         precision:
           type: integer
-          maximum: 18.0
+          maximum: 8.0
           minimum: 0.0
           title: Precision
         ticker:
           anyOf:
           - type: string
             maxLength: 24
-            minLength: 1
+            minLength: 3
           - type: 'null'
           title: Ticker
         version:
@@ -4125,14 +4105,6 @@ components:
           - http
           title: Domain Verification Method
           default: http
-        initial_issuer_pubkey:
-          anyOf:
-          - type: string
-            maxLength: 66
-            minLength: 66
-            pattern: ^(02|03)[0-9a-fA-F]{64}$
-          - type: 'null'
-          title: Initial Issuer Pubkey
         mutable:
           $ref: '#/components/schemas/MutableMetadata-Input'
       additionalProperties: false

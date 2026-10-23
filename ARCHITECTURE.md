@@ -19,13 +19,15 @@ Legacy operations remain at the root paths for v1-compatible registration, listi
 
 `contract.version` identifies the immutable contract metadata format. `mutable_schema_version` identifies the mutable action format. These versions evolve independently.
 
+New registrations through `POST /v2/assets` must set `contract.version` to the JSON integer `2`. The field is required; version `1` and versions greater than `2` are not supported. Legacy registration through `POST /` requires version `0`. Migrating a legacy asset changes its registry representation without rewriting its immutable contract, so v2 lookup and listing responses may still contain `contract.version: 0`.
+
 FastAPI and Pydantic are the source of truth for the OpenAPI contract. The tracked `openapi.yaml` is generated from the application for SDKs, reviews, and releases; it must not be edited manually.
 
 ## Asset Identity and Metadata
 
 The blockchain `asset_id` is the stable external identity. Database rows use UUID primary keys so application identity is independent of blockchain identifiers and historical records.
 
-Contract metadata is immutable after registration. For v2 and later contracts, `initial_issuer_pubkey` is included in the contract and therefore in its contract hash. `current_issuer_pubkey` is registry state initialized from that key and changed only through an accepted rotation action.
+Contract metadata is immutable after registration. For version `2` contracts, `initial_issuer_pubkey` is required inside the contract and therefore included in its contract hash. `current_issuer_pubkey` is registry state initialized from that key and changed only through an accepted rotation action.
 
 Issuer-controlled mutable metadata is normalized into category tags, trading venues, and custom attributes. Admin annotations—such as featured, malicious, delisted, and asset type—are stored separately and cannot rewrite issuer metadata.
 
