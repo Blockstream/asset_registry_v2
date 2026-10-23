@@ -691,12 +691,14 @@ export interface components {
             precision: number;
             /** Ticker */
             ticker: string;
-            /** Version */
-            version: number;
+            /**
+             * Version
+             * @description Immutable contract format version. Required and must be the JSON integer 2 for new registrations through POST /v2/assets. Version 1 and future versions are not supported. Migrated legacy assets retain version 0 in v2 responses.
+             * @constant
+             */
+            version: 2;
             /** Initial Issuer Pubkey */
-            initial_issuer_pubkey?: string | null;
-            /** Issuer Pubkey */
-            issuer_pubkey?: string | null;
+            initial_issuer_pubkey: string;
         };
         /** ContractMetadataResponse */
         ContractMetadataResponse: {
@@ -1254,8 +1256,6 @@ export interface components {
              * @enum {string}
              */
             domain_verification_method: "dns" | "http";
-            /** Initial Issuer Pubkey */
-            initial_issuer_pubkey?: string | null;
             mutable?: components["schemas"]["MutableMetadata-Input"];
         };
         /** RejectIconAction */

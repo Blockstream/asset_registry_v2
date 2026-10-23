@@ -17,11 +17,11 @@ from typing_extensions import TypeAliasType
 from registry_api.constants import Actor, IconProposalStatus, Operation
 from registry_api.settings import get_settings
 from registry_api.validation import (
+    ADMIN_PERMISSIONS,
     ASSET_TYPES,
     DOMAIN_PATTERN,
     DOMAIN_VERIFICATION_METHODS,
     INITIAL_ISSUER_PUBKEY_SOURCES,
-    ADMIN_PERMISSIONS,
     normalize_asset_id,
     normalize_domain,
     normalize_pubkey,
@@ -101,7 +101,7 @@ V2AssetName = Annotated[
     ),
 ]
 Ticker = Annotated[
-    str, Field(min_length=1, max_length=24, pattern=r"^[A-Za-z0-9.\-]+$")
+    str, Field(min_length=3, max_length=24, pattern=r"^[A-Za-z0-9.\-]+$")
 ]
 LegacyTicker = Annotated[
     str, Field(min_length=3, max_length=24, pattern=r"^[A-Za-z0-9.\-]+$")
@@ -299,11 +299,25 @@ class ContractEntity(StrictModel):
 class ContractMetadata(StrictModel):
     entity: ContractEntity
     name: V2AssetName
-    precision: int = Field(ge=0, le=18)
+    precision: int = Field(ge=0, le=8)
     ticker: Ticker
-    version: int = Field(ge=0, json_schema_extra={"minimum": 1})
-    initial_issuer_pubkey: Pubkey | None = None
-    issuer_pubkey: Pubkey | None = None
+    version: Literal[2] = Field(
+        description=(
+            "Immutable contract format version. Required and must be the JSON integer 2 for new registrations "
+            "through POST /v2/assets. Version 1 and future versions are not supported. "
+            "Migrated legacy assets retain version 0 in v2 responses."
+        )
+    )
+    initial_issuer_pubkey: Pubkey
+
+    @field_validator("version", mode="before")
+    @classmethod
+    def reject_legacy_version(cls, value: Any) -> Any:
+        if value == 0:
+            raise ValueError(
+                "v2 registration does not support contract.version = 0; use the legacy registration endpoint"
+            )
+        return value
 
     @field_validator("name")
     @classmethod
@@ -323,10 +337,10 @@ class ContractMetadata(StrictModel):
     def validate_asset_precision(cls, value: int) -> int:
         return validate_precision(value)
 
-    @field_validator("initial_issuer_pubkey", "issuer_pubkey")
+    @field_validator("initial_issuer_pubkey")
     @classmethod
-    def validate_optional_pubkey(cls, value: str | None) -> str | None:
-        return normalize_pubkey(value) if value is not None else None
+    def validate_initial_issuer_pubkey(cls, value: str) -> str:
+        return normalize_pubkey(value)
 
 
 class ContractMetadataResponse(BaseModel):
@@ -334,10 +348,10 @@ class ContractMetadataResponse(BaseModel):
 
     entity: ContractEntity
     name: str = Field(min_length=1, max_length=255)
-    precision: int = Field(ge=0, le=18)
+    precision: int = Field(ge=0, le=8)
     ticker: str | None = Field(
         default=None,
-        min_length=1,
+        min_length=3,
         max_length=24,
         exclude_if=lambda value: value is None,
     )
@@ -420,7 +434,6 @@ class RegisterAssetRequest(StrictModel):
     asset_id: AssetId
     contract: ContractMetadata
     domain_verification_method: Literal["dns", "http"] = "http"
-    initial_issuer_pubkey: Pubkey | None = None
     mutable: MutableMetadata = Field(default_factory=MutableMetadata)
 
     @field_validator("asset_id")
@@ -434,33 +447,6 @@ class RegisterAssetRequest(StrictModel):
         return require_controlled_value(
             value, DOMAIN_VERIFICATION_METHODS, "domain verification method"
         )
-
-    @field_validator("initial_issuer_pubkey")
-    @classmethod
-    def validate_initial_pubkey(cls, value: str | None) -> str | None:
-        return normalize_pubkey(value) if value is not None else None
-
-    @model_validator(mode="after")
-    def validate_issuer_key_policy(self) -> "RegisterAssetRequest":
-        if self.contract.version == 0:
-            raise ValueError(
-                "v2 registration does not support contract.version = 0; use the legacy registration endpoint"
-            )
-        if self.contract.version >= 2 and self.contract.initial_issuer_pubkey is None:
-            raise PydanticCustomError(
-                "issuer_key_policy_conflict",
-                "v2+ contract metadata requires contract.initial_issuer_pubkey",
-            )
-        if (
-            self.contract.version < 2
-            and self.contract.initial_issuer_pubkey is None
-            and self.initial_issuer_pubkey is None
-        ):
-            raise PydanticCustomError(
-                "issuer_key_policy_conflict",
-                "legacy contracts require initial_issuer_pubkey when not present in contract",
-            )
-        return self
 
 
 class IssuerPubkeyHistoryEntry(StrictModel):

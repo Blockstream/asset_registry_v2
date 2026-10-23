@@ -3,16 +3,18 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
-from registry_api.settings import get_settings
 from registry_api.schemas import (
     AddAdminAction,
     AssetResponse,
+    ContractMetadata,
     ContractMetadataResponse,
     IssuerAction,
     LegacyAssetRequest,
+    LegacyContractMetadata,
     MigrateAssetAction,
     RegisterAssetRequest,
 )
+from registry_api.settings import get_settings
 
 ASSET_ID = "AA909F1B00000000000000000000000000000000000000000000000000000000"
 PUBKEY = "0382375B3986FEB6F33D96F86C4BC5E09F53D7B3E4EB5B90EECA6D487B7EB40A65"
@@ -40,8 +42,32 @@ def test_register_asset_request_normalizes_identifiers_and_defaults_domain_verif
     assert request.domain_verification_method == "http"
 
 
-def test_register_asset_request_rejects_v2_contract_without_initial_issuer_key() -> None:
-    with pytest.raises(ValidationError):
+@pytest.mark.parametrize("model", [LegacyContractMetadata, ContractMetadata, ContractMetadataResponse])
+@pytest.mark.parametrize("precision", [-1, 0, 8, 9, 18])
+def test_contract_precision_uses_legacy_range(model, precision: int) -> None:
+    contract = {
+        "entity": {"domain": "proof.example.com"},
+        "name": "Example Asset",
+        "precision": precision,
+        "ticker": "EXAMPLE",
+        "version": 0 if model is LegacyContractMetadata else 2,
+    }
+    if model is ContractMetadata:
+        contract["initial_issuer_pubkey"] = PUBKEY
+    else:
+        contract["issuer_pubkey"] = PUBKEY
+
+    if 0 <= precision <= 8:
+        assert model.model_validate(contract).precision == precision
+    else:
+        with pytest.raises(ValidationError) as exc_info:
+            model.model_validate(contract)
+        assert exc_info.value.errors()[0]["loc"] == ("precision",)
+
+
+@pytest.mark.parametrize("key_fields", [{}, {"initial_issuer_pubkey": None}])
+def test_register_asset_request_requires_non_null_contract_initial_issuer_key(key_fields: dict) -> None:
+    with pytest.raises(ValidationError) as exc_info:
         RegisterAssetRequest.model_validate(
             {
                 "asset_id": ASSET_ID,
@@ -51,9 +77,12 @@ def test_register_asset_request_rejects_v2_contract_without_initial_issuer_key()
                     "precision": 8,
                     "ticker": "EXAMPLE",
                     "version": 2,
+                    **key_fields,
                 },
             }
         )
+
+    assert exc_info.value.errors()[0]["loc"] == ("contract", "initial_issuer_pubkey")
 
 
 def test_register_asset_request_rejects_v2_contract_without_ticker() -> None:
@@ -107,18 +136,27 @@ def test_register_asset_request_rejects_v2_ticker_over_24_characters() -> None:
         )
 
 
-def test_contract_metadata_response_allows_short_v2_ticker() -> None:
-    response = ContractMetadataResponse.model_validate(
-        {
-            "entity": {"domain": "proof.example.com"},
-            "name": "Example Asset",
-            "precision": 8,
-            "ticker": "A",
-            "version": 2,
-        }
-    )
+@pytest.mark.parametrize("model", [LegacyContractMetadata, ContractMetadata, ContractMetadataResponse])
+@pytest.mark.parametrize("length", [0, 1, 2, 3, 24, 25])
+def test_contract_ticker_length_matches_legacy(model, length: int) -> None:
+    contract = {
+        "entity": {"domain": "proof.example.com"},
+        "name": "Example Asset",
+        "precision": 8,
+        "ticker": "A" * length,
+        "version": 0 if model is LegacyContractMetadata else 2,
+    }
+    if model is ContractMetadata:
+        contract["initial_issuer_pubkey"] = PUBKEY
+    else:
+        contract["issuer_pubkey"] = PUBKEY
 
-    assert response.ticker == "A"
+    if 3 <= length <= 24:
+        assert model.model_validate(contract).ticker == "A" * length
+    else:
+        with pytest.raises(ValidationError) as exc_info:
+            model.model_validate(contract)
+        assert exc_info.value.errors()[0]["loc"] == ("ticker",)
 
 
 def test_contract_metadata_response_omits_absent_optional_contract_fields() -> None:
@@ -263,40 +301,47 @@ def test_register_asset_request_rejects_extra_v2_contract_fields() -> None:
         )
 
 
-def test_register_asset_request_rejects_contract_version_zero() -> None:
-    with pytest.raises(ValidationError, match="contract.version = 0"):
+@pytest.mark.parametrize("version", [-1, 0, 1, 3])
+def test_register_asset_request_rejects_contract_versions_other_than_two(version: int) -> None:
+    with pytest.raises(ValidationError) as exc_info:
         RegisterAssetRequest.model_validate(
             {
                 "asset_id": ASSET_ID,
                 "contract": {
                     "entity": {"domain": "proof.example.com"},
-                    "issuer_pubkey": PUBKEY,
+                    "initial_issuer_pubkey": PUBKEY,
                     "name": "Example Asset",
                     "precision": 0,
                     "ticker": "EXAMPLE",
-                    "version": 0,
+                    "version": version,
+                },
+            }
+        )
+
+    assert exc_info.value.errors()[0]["loc"] == ("contract", "version")
+    if version == 0:
+        assert "use the legacy registration endpoint" in exc_info.value.errors()[0]["msg"]
+    else:
+        assert exc_info.value.errors()[0]["type"] == "literal_error"
+
+
+def test_register_asset_request_rejects_v2_key_only_in_registration_body() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        RegisterAssetRequest.model_validate(
+            {
+                "asset_id": ASSET_ID,
+                "contract": {
+                    "entity": {"domain": "proof.example.com"},
+                    "name": "Example Asset",
+                    "precision": 0,
+                    "ticker": "EXAMPLE",
+                    "version": 2,
                 },
                 "initial_issuer_pubkey": PUBKEY,
             }
         )
 
-
-def test_register_asset_request_accepts_legacy_key_from_registration_body() -> None:
-    request = RegisterAssetRequest.model_validate(
-        {
-            "asset_id": ASSET_ID,
-            "contract": {
-                "entity": {"domain": "proof.example.com"},
-                "name": "Example Asset",
-                "precision": 0,
-                "ticker": "EXAMPLE",
-                "version": 1,
-            },
-            "initial_issuer_pubkey": PUBKEY,
-        }
-    )
-
-    assert request.initial_issuer_pubkey == PUBKEY.lower()
+    assert exc_info.value.errors()[0]["loc"] == ("contract", "initial_issuer_pubkey")
 
 
 def test_register_asset_request_rejects_bad_domain_and_duplicate_tags() -> None:

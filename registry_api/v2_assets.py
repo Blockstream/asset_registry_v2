@@ -105,15 +105,7 @@ def register_v2_asset(
     registration_payload: bytes | None = None,
 ) -> AssetResponse:
     method = request.domain_verification_method or "http"
-    initial_pubkey = (
-        request.contract.initial_issuer_pubkey or request.initial_issuer_pubkey
-    )
-    if initial_pubkey is None:
-        raise RegistryError(
-            ErrorCode.VALIDATION_ERROR,
-            "initial issuer pubkey is required",
-            status_code=409,
-        )
+    initial_pubkey = request.contract.initial_issuer_pubkey
 
     hash_hex = contract_hash(request.contract.model_dump(exclude_none=True))
     _chain_verifier(
@@ -138,7 +130,7 @@ def register_v2_asset(
             resolve_txt=resolve_txt,
         )
 
-    command = command_from_v2_registration(request, initial_pubkey)
+    command = command_from_v2_registration(request)
     asset = new_registered_asset(command)
 
     try:

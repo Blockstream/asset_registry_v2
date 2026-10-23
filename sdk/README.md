@@ -48,6 +48,10 @@ URL. Call `registry.legacy.getIcons()` when one bulk Base64 map is preferable.
 
 ## Register an Asset
 
+New v2 registrations require `contract.version` to be the JSON integer `2`
+and `contract.initial_issuer_pubkey` to be present and non-null. Migrated
+legacy assets retain contract version `0` when returned through the v2 API.
+
 ```typescript
 const registration = {
   asset_id: "07c22bef610db8776bf377f885acc13711eede0f918f33e480b94be3ff40513f",
@@ -57,7 +61,7 @@ const registration = {
     name: "Example",
     precision: 0,
     ticker: "EXAMPLE",
-    version: 2,
+    version: 2 as const,
   },
   domain_verification_method: "dns" as const,
 };

@@ -1,7 +1,6 @@
 from importlib.metadata import version
 from typing import Any
 
-
 API_TITLE = "Liquid Asset Registry"
 API_SUMMARY = "API for registering, updating, deregistering, querying, and auditing Liquid asset metadata."
 API_DESCRIPTION = "FastAPI implementation of the Liquid Asset Registry v2 service with legacy v1 compatibility."
@@ -48,22 +47,6 @@ REGISTER_ASSET_EXAMPLES: dict[str, dict[str, Any]] = {
                 "version": 2,
             },
             "domain_verification_method": "dns",
-        },
-    },
-    "legacyContract": {
-        "summary": "Register an asset with legacy contract metadata",
-        "value": {
-            "asset_id": ASSET_ID,
-            "contract": {
-                "entity": {"domain": "proof.liquidtestnet.example.net"},
-                "issuer_pubkey": PUBKEY,
-                "name": "casas",
-                "precision": 0,
-                "ticker": "casas",
-                "version": 1,
-            },
-            "domain_verification_method": "dns",
-            "initial_issuer_pubkey": PUBKEY,
         },
     },
 }

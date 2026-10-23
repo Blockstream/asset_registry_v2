@@ -1,10 +1,11 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from registry_api.audit import MAX_AUDIT_ID
 from registry_api.main import create_app
 
-
 ASSET_ID = "0" * 64
+PUBKEY = "0382375b3986feb6f33d96f86c4bc5e09f53d7b3e4eb5b90eeca6d487b7eb40a65"
 
 
 def _parameter(operation: dict, name: str) -> dict:
@@ -101,7 +102,8 @@ def test_unknown_and_non_rfc3339_query_values_are_rejected() -> None:
     assert numeric_datetime.status_code == 422
 
 
-def test_cross_field_issuer_key_policy_is_reported_as_a_conflict() -> None:
+@pytest.mark.parametrize("key_fields", [{}, {"initial_issuer_pubkey": None}])
+def test_contract_initial_issuer_key_is_required_and_non_null(key_fields: dict) -> None:
     response = TestClient(create_app()).post(
         "/v2/assets",
         json={
@@ -111,13 +113,74 @@ def test_cross_field_issuer_key_policy_is_reported_as_a_conflict() -> None:
                 "name": "Example",
                 "precision": 0,
                 "ticker": "TEST",
-                "version": 1,
+                "version": 2,
+                **key_fields,
             },
         },
     )
 
-    assert response.status_code == 409
-    assert response.json()["error"] == "validation_error"
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"] == ["body", "contract", "initial_issuer_pubkey"]
+
+
+@pytest.mark.parametrize(
+    "field, location",
+    [
+        ("issuer_pubkey", ["body", "contract", "issuer_pubkey"]),
+        ("initial_issuer_pubkey", ["body", "initial_issuer_pubkey"]),
+    ],
+)
+@pytest.mark.parametrize("extra_key", [None, PUBKEY, "02" + "ab" * 32])
+def test_v2_registration_rejects_obsolete_issuer_key_fields(
+    field: str, location: list[str], extra_key: str | None
+) -> None:
+    payload = {
+        "asset_id": ASSET_ID,
+        "contract": {
+            "entity": {"domain": "example.test"},
+            "name": "Example",
+            "precision": 0,
+            "ticker": "TEST",
+            "version": 2,
+            "initial_issuer_pubkey": PUBKEY,
+        },
+    }
+    if field == "issuer_pubkey":
+        payload["contract"][field] = extra_key
+    else:
+        payload[field] = extra_key
+
+    response = TestClient(create_app()).post("/v2/assets", json=payload)
+
+    assert response.status_code == 422
+    (error,) = response.json()["detail"]
+    assert error["loc"] == location
+    assert error["type"] == "extra_forbidden"
+
+
+def test_v2_registration_directs_version_zero_contracts_to_legacy_endpoint() -> None:
+    response = TestClient(create_app()).post(
+        "/v2/assets",
+        json={
+            "asset_id": ASSET_ID,
+            "contract": {
+                "entity": {"domain": "example.test"},
+                "name": "Example",
+                "precision": 0,
+                "ticker": "TEST",
+                "version": 0,
+                "issuer_pubkey": PUBKEY,
+            },
+        },
+    )
+
+    assert response.status_code == 422
+    version_error = next(
+        error
+        for error in response.json()["detail"]
+        if error["loc"] == ["body", "contract", "version"]
+    )
+    assert "use the legacy registration endpoint" in version_error["msg"]
 
 
 def test_reported_invalid_requests_are_rejected_without_server_errors() -> None:

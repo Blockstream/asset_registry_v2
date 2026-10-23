@@ -2,7 +2,11 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from registry_api.contracts import contract_extra_fields_from_legacy_request
-from registry_api.schemas import LegacyAssetRequest, MutableMetadata, RegisterAssetRequest
+from registry_api.schemas import (
+    LegacyAssetRequest,
+    MutableMetadata,
+    RegisterAssetRequest,
+)
 
 
 @dataclass(frozen=True)
@@ -41,7 +45,9 @@ def command_from_legacy_registration(request: LegacyAssetRequest) -> RegisterAss
     )
 
 
-def command_from_v2_registration(request: RegisterAssetRequest, initial_pubkey: str) -> RegisterAssetCommand:
+def command_from_v2_registration(
+    request: RegisterAssetRequest,
+) -> RegisterAssetCommand:
     method = request.domain_verification_method or "http"
     return RegisterAssetCommand(
         asset_id=request.asset_id,
@@ -52,8 +58,8 @@ def command_from_v2_registration(request: RegisterAssetRequest, initial_pubkey: 
         ticker=request.contract.ticker,
         precision=request.contract.precision,
         domain_verification_method=method,
-        initial_issuer_pubkey=initial_pubkey,
-        initial_issuer_pubkey_source="contract" if request.contract.initial_issuer_pubkey is not None else "registry_registration",
+        initial_issuer_pubkey=request.contract.initial_issuer_pubkey,
+        initial_issuer_pubkey_source="contract",
         contract_extra_fields={},
         mutable=request.mutable,
         source="v2",

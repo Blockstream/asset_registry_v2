@@ -98,7 +98,7 @@ def test_pubkey_bound_domain_proof_parser_rejects_invalid_content(content: str, 
     assert exc_info.value.error == error
 
 
-def test_normalized_contract_signature_payload_uses_contract_only_and_excludes_none() -> None:
+def test_normalized_contract_signature_payload_uses_normalized_contract_only() -> None:
     contract = ContractMetadata.model_validate(
         {
             "entity": {"domain": "proof.example.com"},
@@ -107,7 +107,6 @@ def test_normalized_contract_signature_payload_uses_contract_only_and_excludes_n
             "ticker": "TEST",
             "version": 2,
             "initial_issuer_pubkey": PUBKEY.upper(),
-            "issuer_pubkey": None,
         }
     )
 
