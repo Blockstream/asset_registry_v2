@@ -487,8 +487,8 @@ export interface components {
             /** Actor Pubkey */
             actor_pubkey: string;
             /**
-             * Operation
-             * @constant
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
              */
             operation: "add_admin";
             /**
@@ -577,8 +577,8 @@ export interface components {
             /** Actor Pubkey */
             actor_pubkey: string;
             /**
-             * Operation
-             * @constant
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
              */
             operation: "approve_icon";
             /**
@@ -728,8 +728,8 @@ export interface components {
             /** Asset Id */
             asset_id: string;
             /**
-             * Operation
-             * @constant
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
              */
             operation: "delete_custom_field";
             /** Prev Action Hash */
@@ -756,8 +756,8 @@ export interface components {
             /** Asset Id */
             asset_id: string;
             /**
-             * Operation
-             * @constant
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
              */
             operation: "deregister";
             /** Prev Action Hash */
@@ -791,8 +791,8 @@ export interface components {
             /** Actor Pubkey */
             actor_pubkey: string;
             /**
-             * Operation
-             * @constant
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
              */
             operation: "force_delist_asset";
             /**
@@ -817,8 +817,8 @@ export interface components {
             /** Actor Pubkey */
             actor_pubkey: string;
             /**
-             * Operation
-             * @constant
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
              */
             operation: "force_relist_asset";
             /**
@@ -1268,8 +1268,8 @@ export interface components {
             /** Actor Pubkey */
             actor_pubkey: string;
             /**
-             * Operation
-             * @constant
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
              */
             operation: "reject_icon";
             /**
@@ -1296,8 +1296,8 @@ export interface components {
             /** Actor Pubkey */
             actor_pubkey: string;
             /**
-             * Operation
-             * @constant
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
              */
             operation: "remove_admin";
             /**
@@ -1320,8 +1320,8 @@ export interface components {
             /** Asset Id */
             asset_id: string;
             /**
-             * Operation
-             * @constant
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
              */
             operation: "replace_category_tags";
             /** Prev Action Hash */
@@ -1348,8 +1348,8 @@ export interface components {
             /** Asset Id */
             asset_id: string;
             /**
-             * Operation
-             * @constant
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
              */
             operation: "replace_custom";
             /** Prev Action Hash */
@@ -1378,8 +1378,8 @@ export interface components {
             /** Asset Id */
             asset_id: string;
             /**
-             * Operation
-             * @constant
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
              */
             operation: "replace_trading_venues";
             /** Prev Action Hash */
@@ -1406,8 +1406,8 @@ export interface components {
             /** Asset Id */
             asset_id: string;
             /**
-             * Operation
-             * @constant
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
              */
             operation: "rotate_issuer_pubkey";
             /** Prev Action Hash */
@@ -1434,8 +1434,8 @@ export interface components {
             /** Asset Id */
             asset_id: string;
             /**
-             * Operation
-             * @constant
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
              */
             operation: "set_custom_field";
             /** Prev Action Hash */
@@ -1502,8 +1502,8 @@ export interface components {
             /** Actor Pubkey */
             actor_pubkey: string;
             /**
-             * Operation
-             * @constant
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
              */
             operation: "update_admin_annotations";
             /**
@@ -1527,8 +1527,8 @@ export interface components {
             /** Actor Pubkey */
             actor_pubkey: string;
             /**
-             * Operation
-             * @constant
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
              */
             operation: "update_admin_name";
             /**
@@ -1553,8 +1553,8 @@ export interface components {
             /** Actor Pubkey */
             actor_pubkey: string;
             /**
-             * Operation
-             * @constant
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
              */
             operation: "update_admin_permissions";
             /**
