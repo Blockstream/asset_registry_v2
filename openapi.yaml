@@ -1410,7 +1410,7 @@ paths:
         content:
           application/json:
             schema:
-              anyOf:
+              oneOf:
               - $ref: '#/components/schemas/ReplaceCategoryTagsAction'
               - $ref: '#/components/schemas/ReplaceTradingVenuesAction'
               - $ref: '#/components/schemas/ReplaceCustomAction'
@@ -1418,6 +1418,16 @@ paths:
               - $ref: '#/components/schemas/DeleteCustomFieldAction'
               - $ref: '#/components/schemas/DeregisterAction'
               - $ref: '#/components/schemas/RotateIssuerPubkeyAction'
+              discriminator:
+                propertyName: operation
+                mapping:
+                  replace_category_tags: '#/components/schemas/ReplaceCategoryTagsAction'
+                  replace_trading_venues: '#/components/schemas/ReplaceTradingVenuesAction'
+                  replace_custom: '#/components/schemas/ReplaceCustomAction'
+                  set_custom_field: '#/components/schemas/SetCustomFieldAction'
+                  delete_custom_field: '#/components/schemas/DeleteCustomFieldAction'
+                  deregister: '#/components/schemas/DeregisterAction'
+                  rotate_issuer_pubkey: '#/components/schemas/RotateIssuerPubkeyAction'
               title: ' Action'
             examples:
               replaceCategoryTags:
@@ -1952,11 +1962,18 @@ paths:
         content:
           application/json:
             schema:
-              anyOf:
+              oneOf:
               - $ref: '#/components/schemas/AddAdminAction'
               - $ref: '#/components/schemas/UpdateAdminPermissionsAction'
               - $ref: '#/components/schemas/UpdateAdminNameAction'
               - $ref: '#/components/schemas/RemoveAdminAction'
+              discriminator:
+                propertyName: operation
+                mapping:
+                  add_admin: '#/components/schemas/AddAdminAction'
+                  update_admin_permissions: '#/components/schemas/UpdateAdminPermissionsAction'
+                  update_admin_name: '#/components/schemas/UpdateAdminNameAction'
+                  remove_admin: '#/components/schemas/RemoveAdminAction'
               title: ' Action'
             examples:
               addAdmin:
@@ -2383,12 +2400,20 @@ paths:
         content:
           application/json:
             schema:
-              anyOf:
+              oneOf:
               - $ref: '#/components/schemas/UpdateAdminAnnotationsAction'
               - $ref: '#/components/schemas/ForceDelistAssetAction'
               - $ref: '#/components/schemas/ForceRelistAssetAction'
               - $ref: '#/components/schemas/ApproveIconAction'
               - $ref: '#/components/schemas/RejectIconAction'
+              discriminator:
+                propertyName: operation
+                mapping:
+                  update_admin_annotations: '#/components/schemas/UpdateAdminAnnotationsAction'
+                  force_delist_asset: '#/components/schemas/ForceDelistAssetAction'
+                  force_relist_asset: '#/components/schemas/ForceRelistAssetAction'
+                  approve_icon: '#/components/schemas/ApproveIconAction'
+                  reject_icon: '#/components/schemas/RejectIconAction'
               title: ' Action'
             examples:
               forceDelist:
