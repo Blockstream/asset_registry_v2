@@ -170,11 +170,10 @@ describe("AssetRegistryClient", () => {
       contract: {
         entity: { domain: "proof.example.com" },
         initial_issuer_pubkey: pubkey.toUpperCase(),
-        issuer_pubkey: null,
         name: "Proof Asset",
         precision: 8,
         ticker: "PROOF",
-        version: 2,
+        version: 2 as const,
       },
       domain_verification_method: "dns" as const,
       mutable: {

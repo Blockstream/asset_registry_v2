@@ -301,8 +301,7 @@ export class V2Client extends BaseClient {
 function normalizeRegistrationContract(contract: V2AssetContract): Record<string, unknown> {
   return stripNullish({
     ...contract,
-    initial_issuer_pubkey: contract.initial_issuer_pubkey?.toLowerCase(),
-    issuer_pubkey: contract.issuer_pubkey?.toLowerCase(),
+    initial_issuer_pubkey: contract.initial_issuer_pubkey.toLowerCase(),
   }) as Record<string, unknown>;
 }
 

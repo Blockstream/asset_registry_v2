@@ -16,9 +16,9 @@ from registry_api.openapi_metadata import (
     ADMIN_ICON_UPLOAD_EXAMPLES,
     ADMIN_LIFECYCLE_EXAMPLES,
     API_TITLE,
+    ICON_PROPOSAL_EXAMPLES,
     ISSUER_ACTION_EXAMPLES,
     ISSUER_ICON_SEARCH_EXAMPLES,
-    ICON_PROPOSAL_EXAMPLES,
     REGISTER_ASSET_EXAMPLES,
 )
 from registry_api.schemas import (
@@ -26,10 +26,10 @@ from registry_api.schemas import (
     AdminIconUploadRequest,
     AdminLifecycleAction,
     IconProposalRequest,
-    IssuerIconProposalSearchRequest,
     IssuerAction,
-    RegisterAssetRequest,
+    IssuerIconProposalSearchRequest,
     PendingIconProposalSearchRequest,
+    RegisterAssetRequest,
     UpdateAdminAnnotationsAction,
 )
 from registry_api.settings import Settings
@@ -118,7 +118,7 @@ def test_generated_openapi_preserves_stable_operation_ids_and_examples() -> None
         assert schema["paths"][path][method]["operationId"] == operation_id
 
     expected_examples = {
-        ("/v2/assets", "post"): {"v2Contract", "legacyContract"},
+        ("/v2/assets", "post"): {"v2Contract"},
         ("/v2/assets/{asset_id}/actions", "post"): {
             "replaceCategoryTags",
             "replaceTradingVenues",
@@ -179,6 +179,43 @@ def test_openapi_examples_validate_against_request_models() -> None:
         adapter = TypeAdapter(model)
         for example in examples.values():
             adapter.validate_python(example["value"])
+
+
+def test_v2_contract_schema_requires_version_two_and_legacy_precision_limit() -> None:
+    schemas = create_app().openapi()["components"]["schemas"]
+
+    assert schemas["ContractMetadata"]["properties"]["version"]["const"] == 2
+    for schema_name in ("LegacyContractMetadata", "ContractMetadata", "ContractMetadataResponse"):
+        precision = schemas[schema_name]["properties"]["precision"]
+        assert precision["minimum"] == 0
+        assert precision["maximum"] == 8
+
+    for example in REGISTER_ASSET_EXAMPLES.values():
+        assert example["value"]["contract"]["version"] == 2
+
+
+def test_v2_contract_schema_requires_non_null_initial_key_and_legacy_ticker_minimum() -> None:
+    schemas = create_app().openapi()["components"]["schemas"]
+    contract = schemas["ContractMetadata"]
+
+    assert "initial_issuer_pubkey" in contract["required"]
+    key = contract["properties"]["initial_issuer_pubkey"]
+    assert key["type"] == "string"
+    assert "anyOf" not in key
+    assert "default" not in key
+    assert key["minLength"] == key["maxLength"] == 66
+    assert "issuer_pubkey" not in contract["properties"]
+    assert "initial_issuer_pubkey" not in schemas["RegisterAssetRequest"]["properties"]
+
+    for schema_name in ("LegacyContractMetadata", "ContractMetadata"):
+        ticker = schemas[schema_name]["properties"]["ticker"]
+        assert ticker["minLength"] == 3
+        assert ticker["maxLength"] == 24
+
+    ticker_options = schemas["ContractMetadataResponse"]["properties"]["ticker"]["anyOf"]
+    ticker = next(option for option in ticker_options if option["type"] == "string")
+    assert ticker["minLength"] == 3
+    assert ticker["maxLength"] == 24
 
 
 def test_legacy_contract_request_schemas_keep_declared_field_constraints_inline() -> (

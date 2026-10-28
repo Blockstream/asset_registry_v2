@@ -48,6 +48,10 @@ URL. Call `registry.legacy.getIcons()` when one bulk Base64 map is preferable.
 
 ## Register an Asset
 
+New v2 registrations require `contract.version` to be the JSON integer `2`
+and `contract.initial_issuer_pubkey` to be present and non-null. Migrated
+legacy assets retain contract version `0` when returned through the v2 API.
+
 ```typescript
 const registration = {
   asset_id: "07c22bef610db8776bf377f885acc13711eede0f918f33e480b94be3ff40513f",
@@ -57,7 +61,7 @@ const registration = {
     name: "Example",
     precision: 0,
     ticker: "EXAMPLE",
-    version: 2,
+    version: 2 as const,
   },
   domain_verification_method: "dns" as const,
 };
@@ -197,5 +201,7 @@ npm run check:types     # fail if generated types are stale
 npm run check           # audit, format check, lint, typecheck, and tests
 npm run build           # declarations, ESM, and CommonJS
 ```
+
+The `@istanbuljs/load-nyc-config` dependency override uses `js-yaml` 4.3.2 or newer to remove the vulnerable `sprintf-js` dependency from Jest's coverage tooling. The loader uses `js-yaml.load()`, which remains supported in v4. Remove the override when the upstream loader adopts a dependency tree without `sprintf-js`.
 
 The OpenAPI snapshot is the source of truth for wire request and response types. Generated declarations in `src/generated/` should not be edited manually.

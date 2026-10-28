@@ -76,7 +76,7 @@ const registeredAsset = await client.v2.register({
     name: "unspent5.info",
     precision: 0,
     ticker: "UNSPENT",
-    version: 1,
+    version: 2,
   },
   domain_verification_method: "dns",
 });

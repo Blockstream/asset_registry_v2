@@ -9,6 +9,12 @@ API.
 The Python API implementation lives under `registry_api/`, database migrations
 under `migrations/`, and the generated API specification in `openapi.yaml`.
 
+New registrations at `POST /v2/assets` must include `contract.version: 2`
+(a JSON integer) and a non-null `contract.initial_issuer_pubkey`. Legacy
+registration at `POST /` uses contract version `0`; migrated legacy assets
+retain that version in v2 responses. See the
+[versioning model](ARCHITECTURE.md#api-and-versioning-model) for details.
+
 ## TypeScript SDK
 
 The repository also includes a TypeScript SDK for Node.js and modern browsers.

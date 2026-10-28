@@ -12,22 +12,44 @@ Thank you for contributing to the Liquid Asset Registry.
 ## Development Setup
 
 The service requires Python 3.11 or newer and PostgreSQL 16. The SDK requires
-Node.js 18.18 or newer.
+Node.js 18.18 or newer. The locked development and production dependencies are
+resolved for Python 3.12, which matches the container image and CI, so use
+Python 3.12 for local development.
 
 Install the Python development dependencies:
 
 ```bash
-python -m venv .venv
-.venv/bin/python -m pip install -e ".[dev]"
+python3.12 -m venv .venv
+.venv/bin/python -m pip install --require-hashes -r requirements-dev.txt
+.venv/bin/python -m pip install --no-deps -e .
 ```
 
 `requirements.txt` is the fully pinned, hash-verified production dependency
 lock used by the container build. After changing runtime dependencies in
-`pyproject.toml`, regenerate it with:
+`pyproject.toml`, regenerate it and the development lock with:
 
 ```bash
 uv pip compile pyproject.toml --python-platform x86_64-manylinux_2_28 \
-  --generate-hashes --python-version 3.12 --output-file requirements.txt
+  --generate-hashes --python-version 3.12 --upgrade --output-file requirements.txt
+uv pip compile pyproject.toml --extra dev --constraint requirements.txt \
+  --python-platform x86_64-manylinux_2_28 --generate-hashes --python-version 3.12 \
+  --upgrade --output-file requirements-dev.txt
+```
+
+`requirements-dev.txt` includes the production pins plus the development tools,
+with hashes for every dependency. The remote signer example has its own
+runtime inputs in `sdk/examples/remote-signer/requirements.in`, used by its
+container image, and test inputs in `requirements-dev.in`. Regenerate both locks
+with:
+
+```bash
+uv pip compile sdk/examples/remote-signer/requirements.in \
+  --python-platform x86_64-manylinux_2_28 --generate-hashes --python-version 3.11 \
+  --upgrade --output-file sdk/examples/remote-signer/requirements.txt
+uv pip compile sdk/examples/remote-signer/requirements-dev.in \
+  --constraint sdk/examples/remote-signer/requirements.txt \
+  --python-platform x86_64-manylinux_2_28 --generate-hashes --python-version 3.11 \
+  --upgrade --output-file sdk/examples/remote-signer/requirements-dev.txt
 ```
 
 Start PostgreSQL and apply migrations:
