@@ -1,9 +1,27 @@
 from collections.abc import Collection
 
-from starlette.datastructures import Headers
+from starlette.datastructures import Headers, MutableHeaders
 from starlette.middleware.gzip import GZipMiddleware as StarletteGZipMiddleware
 from starlette.middleware.gzip import GZipResponder
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
+
+
+def _send_deduplicating_vary(send: Send) -> Send:
+    """Collapse repeated Vary tokens; Starlette appends without checking."""
+
+    async def wrapped(message: Message) -> None:
+        if message["type"] == "http.response.start":
+            headers = MutableHeaders(raw=message["headers"])
+            if "vary" in headers:
+                tokens: dict[str, str] = {}
+                for value in headers.getlist("vary"):
+                    for token in value.split(","):
+                        if token.strip():
+                            tokens.setdefault(token.strip().lower(), token.strip())
+                headers["Vary"] = ", ".join(tokens.values())
+        await send(message)
+
+    return wrapped
 
 
 class _ContentTypeAwareGZipResponder(GZipResponder):
@@ -49,10 +67,11 @@ class GZipMiddleware(StarletteGZipMiddleware):
         )
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http" or not self.excluded_content_types:
-            await super().__call__(scope, receive, send)
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
             return
 
+        send = _send_deduplicating_vary(send)
         headers = Headers(scope=scope)
         if "gzip" not in headers.get("Accept-Encoding", ""):
             await self.app(scope, receive, send)

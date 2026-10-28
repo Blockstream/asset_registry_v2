@@ -1,11 +1,16 @@
+import asyncio
 import base64
 import json
 import os
-from datetime import UTC, datetime
+from concurrent.futures import Future, ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta
+from email.utils import format_datetime
+from threading import Event
+from time import monotonic, sleep
 
 import pytest
 import wallycore as wally
-from sqlalchemy import create_engine, delete, text
+from sqlalchemy import create_engine, delete, event, text
 from sqlalchemy.orm import sessionmaker
 
 from registry_api.canonical_json import canonical_json_bytes, contract_hash
@@ -630,3 +635,372 @@ def signed_message(payload: bytes) -> str:
     message_hash = _bitcoin_signed_message_hash(payload.decode("utf-8"))
     signature = wally.ec_sig_from_bytes(SIGNING_PRIVATE_KEY, message_hash, wally.EC_FLAG_ECDSA)
     return base64.b64encode(signature).decode()
+
+
+@pytest.fixture()
+def asset_cache_client(session_factory, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from registry_api import serialized_fragments
+    from registry_api.db import get_db
+    from registry_api.main import create_app
+
+    app = create_app()
+
+    def test_db():
+        with session_factory() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = test_db
+    monkeypatch.setattr(serialized_fragments, "SessionLocal", session_factory)
+    with TestClient(app) as client:
+        yield client
+
+
+def backdate_registry_version(session_factory) -> None:
+    # Move the version out of the current second so validators can be reused.
+    with session_factory() as session:
+        session.execute(text("update asset_registry_version set modified_at = '2020-01-01T00:00:00Z'"))
+        session.commit()
+
+
+def test_asset_cache_invalidates_after_issuer_metadata_change(session_factory, asset_cache_client):
+    from registry_api.issuer_actions import get_latest_action_hash, submit_issuer_action
+
+    paths = ["/", "/index.json", f"/{ASSET_ID}", f"/{ASSET_ID.upper()}", "/v2/assets", "/v2/assets/all.json", f"/v2/assets/{ASSET_ID}", f"/v2/assets/{ASSET_ID.upper()}"]
+    with session_factory() as session:
+        register_v2_asset(session, v2_request(pubkey=SIGNING_PUBKEY))
+        session.commit()
+    backdate_registry_version(session_factory)
+
+    dates = {path: asset_cache_client.get(path).headers["Last-Modified"] for path in paths}
+    for path in paths:
+        assert asset_cache_client.get(path, headers={"If-Modified-Since": dates[path]}).status_code == 304
+
+    with session_factory() as session:
+        action = {
+            "signing_context": "liquid-asset-registry-action-v1",
+            "asset_id": ASSET_ID,
+            "operation": "set_custom_field",
+            "nonce": "cache-metadata-change",
+            "timestamp": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            "prev_action_hash": get_latest_action_hash(session, ASSET_ID).action_hash,
+            "mutable_schema_version": 1,
+            "custom_key": "cache_test",
+            "value": "updated",
+        }
+        payload = canonical_json_bytes(action)
+        submit_issuer_action(session, asset_id=ASSET_ID, payload=payload, signature=signed_message(payload))
+
+    for path in paths:
+        response = asset_cache_client.get(path, headers={"If-Modified-Since": dates[path]})
+        assert response.status_code == 200
+        assert response.headers["Last-Modified"] != dates[path]
+    assert asset_cache_client.get(f"/v2/assets/{ASSET_ID}").json()["mutable"]["custom"]["cache_test"] == "updated"
+
+
+def test_asset_cache_invalidates_filtered_and_empty_lists_after_deregistration(session_factory, asset_cache_client):
+    from registry_api.legacy_assets import deregister_legacy_asset
+
+    paths = ["/", "/index.json", "/v2/assets/all.json", "/v2/assets?ticker=V2ASSET", "/v2/assets?page=2&page_size=1", "/v2/assets?name=NoMatch"]
+    with session_factory() as session:
+        register_v2_asset(session, v2_request(pubkey=SIGNING_PUBKEY))
+        session.commit()
+    backdate_registry_version(session_factory)
+
+    dates = {path: asset_cache_client.get(path).headers["Last-Modified"] for path in paths}
+    with session_factory() as session:
+        deregister_legacy_asset(session, ASSET_ID, signed_message(f"remove {ASSET_ID} from registry".encode()))
+
+    for path in paths:
+        response = asset_cache_client.get(path, headers={"If-Modified-Since": dates[path]})
+        assert response.status_code == 200
+        assert response.headers["Last-Modified"] != dates[path]
+        if path.startswith("/v2/assets?"):
+            assert response.json()["items"] == []
+        else:
+            assert response.json() == {}
+    for path in [f"/{ASSET_ID}", f"/v2/assets/{ASSET_ID}"]:
+        assert asset_cache_client.get(path, headers={"If-Modified-Since": dates["/"]}).status_code == 404
+    backdate_registry_version(session_factory)
+    for path in paths:
+        date = asset_cache_client.get(path).headers["Last-Modified"]
+        assert asset_cache_client.get(path, headers={"If-Modified-Since": date}).status_code == 304
+
+
+def test_asset_read_does_not_validate_against_in_flight_version_bump(session_factory, asset_cache_client):
+    with session_factory() as session:
+        register_v2_asset(session, v2_request())
+        visible_version = session.scalar(
+            text(
+                "update asset_registry_version "
+                "set modified_at = date_trunc('second', clock_timestamp()) + interval '1 second' "
+                "returning modified_at"
+            )
+        )
+        session.commit()
+    path = f"/v2/assets/{ASSET_ID}"
+
+    with session_factory() as writer:
+        writer.execute(text("update assets set name = 'Pending' where asset_id = :asset_id"), {"asset_id": ASSET_ID})
+        writer.execute(text("set constraints all immediate"))
+        wait_for_database_second_after(writer, visible_version + timedelta(seconds=1))
+
+        started = monotonic()
+        snapshot = asset_cache_client.get(path)
+        assert monotonic() - started < 2
+        date = format_datetime(visible_version.astimezone(UTC), usegmt=True)
+        assert snapshot.headers["Last-Modified"] == date
+        assert snapshot.json()["contract"]["name"] == "V2 Asset"
+        writer.commit()
+
+    response = asset_cache_client.get(path, headers={"If-Modified-Since": date})
+    assert response.status_code == 200
+    assert response.json()["contract"]["name"] == "Pending"
+
+
+def test_registry_version_follows_commit_order(session_factory, asset_cache_client):
+    with session_factory() as session:
+        register_v2_asset(session, v2_request(pubkey=SIGNING_PUBKEY))
+        session.commit()
+    backdate_registry_version(session_factory)
+
+    commit_slow = Event()
+    slow_ready: Future[int] = Future()
+
+    def slow_writer():
+        try:
+            with session_factory() as slow:
+                slow.execute(text("set local lock_timeout = '10s'"))
+                slow.execute(
+                    text("update assets set name = 'Slow' where asset_id = :asset_id"),
+                    {"asset_id": ASSET_ID},
+                )
+                slow_ready.set_result(slow.scalar(text("select pg_backend_pid()")))
+                assert commit_slow.wait(timeout=10), "Slow writer was not released"
+                slow.commit()
+        except BaseException as exc:
+            if not slow_ready.done():
+                slow_ready.set_exception(exc)
+            raise
+
+    path = f"/v2/assets/{ASSET_ID}"
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        slow_commit = pool.submit(slow_writer)
+        try:
+            slow_pid = slow_ready.result(timeout=10)
+            with session_factory() as fast:
+                fast.execute(text("update asset_admin_annotations set featured = not featured"))
+                fast.commit()
+                fast_version = fast.scalar(text("select modified_at from asset_registry_version"))
+                wait_for_database_second_after(fast, fast_version)
+
+            # Use a stable validator so the current-second safeguard cannot
+            # hide a missing version bump when the slow writer commits.
+            fast_date = format_datetime(fast_version.astimezone(UTC), usegmt=True)
+            snapshot = asset_cache_client.get(path)
+            assert snapshot.headers["Last-Modified"] == fast_date
+            assert snapshot.json()["contract"]["name"] == "V2 Asset"
+            assert asset_cache_client.get(path, headers={"If-Modified-Since": fast_date}).status_code == 304
+
+            with session_factory() as reader, session_factory() as observer:
+                assert reader.scalar(text("select modified_at from asset_registry_version for share")) == fast_version
+                reader_pid = reader.scalar(text("select pg_backend_pid()"))
+                commit_slow.set()
+
+                deadline = monotonic() + 5
+                while not observer.scalar(
+                    text("select :reader_pid = any(pg_blocking_pids(:slow_pid))"),
+                    {"reader_pid": reader_pid, "slow_pid": slow_pid},
+                ):
+                    if slow_commit.done():
+                        slow_commit.result()
+                        pytest.fail("Slow writer committed without taking the version lock")
+                    assert monotonic() < deadline, "Slow writer did not wait for the version lock"
+                    sleep(0.01)
+
+                # Cross another database second while the writer is blocked.
+                # Its timestamp must be assigned after it acquires the lock.
+                blocked_second = observer.scalar(text("select date_trunc('second', clock_timestamp())"))
+                wait_for_database_second_after(observer, blocked_second)
+                release_second = observer.scalar(text("select date_trunc('second', clock_timestamp())"))
+                assert not slow_commit.done()
+
+            slow_commit.result(timeout=10)
+        finally:
+            commit_slow.set()
+
+    with session_factory() as session:
+        slow_version = session.scalar(text("select modified_at from asset_registry_version"))
+        assert slow_version > fast_version
+        assert slow_version >= release_second
+        wait_for_database_second_after(session, slow_version)
+
+    response = asset_cache_client.get(path, headers={"If-Modified-Since": fast_date})
+    assert response.status_code == 200
+    assert response.json()["contract"]["name"] == "Slow"
+    slow_date = format_datetime(slow_version.astimezone(UTC), usegmt=True)
+    assert response.headers["Last-Modified"] == slow_date
+    assert asset_cache_client.get(path, headers={"If-Modified-Since": slow_date}).status_code == 304
+
+
+def wait_for_database_second_after(session, timestamp):
+    session.execute(
+        text(
+            "select pg_sleep(greatest(0, extract(epoch from "
+            "(cast(:timestamp as timestamptz) + interval '1 second' - clock_timestamp()))))"
+        ),
+        {"timestamp": timestamp},
+    )
+
+
+def test_issuer_commit_waiting_for_asset_read_does_not_block_event_loop(
+    session_factory, asset_cache_client, monkeypatch
+):
+    import httpx
+
+    from registry_api.api import v2
+    from registry_api.db import get_db
+    from registry_api.issuer_actions import get_latest_action_hash
+
+    with session_factory() as session:
+        register_v2_asset(session, v2_request(pubkey=SIGNING_PUBKEY))
+        prev_action_hash = get_latest_action_hash(session, ASSET_ID).action_hash
+
+    reader_started = Event()
+    release_reader = Event()
+    commit_started = Event()
+    original_search = v2.search_v2_assets
+
+    def slow_search(db, **filters):
+        # Hold FOR SHARE until teardown, as prepare_asset_read once did.
+        db.execute(text("select 1 from asset_registry_version for share"))
+        reader_started.set()
+        assert release_reader.wait(timeout=10), "Reader was not released"
+        return original_search(db, **filters)
+
+    def test_db():
+        with session_factory() as session:
+            # Bound the old event-loop deadlock so the regression test can fail.
+            session.execute(text("set local lock_timeout = '5s'"))
+            yield session
+
+    def before_commit(_session):
+        if reader_started.is_set():
+            commit_started.set()
+
+    action = {
+        "signing_context": "liquid-asset-registry-action-v1",
+        "asset_id": ASSET_ID,
+        "operation": "set_custom_field",
+        "nonce": "async-commit-regression",
+        "timestamp": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        "prev_action_hash": prev_action_hash,
+        "mutable_schema_version": 1,
+        "custom_key": "async_test",
+        "value": "committed",
+    }
+    payload = canonical_json_bytes(action)
+    monkeypatch.setattr(v2, "search_v2_assets", slow_search)
+    asset_cache_client.app.dependency_overrides[get_db] = test_db
+
+    async def check_requests():
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=asset_cache_client.app),
+            base_url="http://testserver",
+        ) as client:
+            reader = asyncio.create_task(client.get("/v2/assets"))
+            tasks = [reader]
+            try:
+                assert await asyncio.to_thread(reader_started.wait, 5)
+                writer = asyncio.create_task(
+                    client.post(
+                        f"/v2/assets/{ASSET_ID}/actions",
+                        content=payload,
+                        headers={
+                            "Content-Type": "application/json",
+                            "Asset-Registry-Signature": signed_message(payload),
+                        },
+                    )
+                )
+                tasks.append(writer)
+                assert await asyncio.to_thread(commit_started.wait, 5)
+                health = await asyncio.wait_for(client.get("/health"), timeout=2)
+                assert health.status_code == 200
+                assert not writer.done(), "Commit should still be waiting for FOR SHARE"
+                release_reader.set()
+                read_response, write_response = await asyncio.wait_for(
+                    asyncio.gather(reader, writer), timeout=10
+                )
+                assert read_response.status_code == 200
+                assert write_response.status_code == 200, write_response.text
+                assert write_response.json()["asset"]["mutable"]["custom"]["async_test"] == "committed"
+            finally:
+                release_reader.set()
+                await asyncio.gather(*tasks, return_exceptions=True)
+
+    event.listen(session_factory.class_, "before_commit", before_commit)
+    try:
+        asyncio.run(check_requests())
+    finally:
+        event.remove(session_factory.class_, "before_commit", before_commit)
+
+
+@pytest.mark.parametrize("path", ["/v2/assets", f"/v2/assets/{ASSET_ID}", f"/{ASSET_ID}"])
+@pytest.mark.parametrize("conditional", [False, True])
+def test_slow_asset_response_does_not_block_writes(session_factory, asset_cache_client, path, conditional):
+    with session_factory() as session:
+        register_v2_asset(session, v2_request())
+    backdate_registry_version(session_factory)
+    date = asset_cache_client.get(path).headers["Last-Modified"]
+
+    def write_asset():
+        with session_factory() as session:
+            session.execute(text("set local lock_timeout = '2s'"))
+            session.execute(
+                text("update assets set name = 'Changed during delivery' where asset_id = :asset_id"),
+                {"asset_id": ASSET_ID},
+            )
+            session.commit()
+
+    async def check_response():
+        body_started = asyncio.Event()
+        release_body = asyncio.Event()
+        statuses = []
+
+        async def receive():
+            await asyncio.Event().wait()
+
+        async def send(message):
+            if message["type"] == "http.response.start":
+                statuses.append(message["status"])
+            elif message["type"] == "http.response.body":
+                body_started.set()
+                await release_body.wait()
+
+        scope = {
+            "type": "http",
+            "asgi": {"version": "3.0", "spec_version": "2.4"},
+            "http_version": "1.1",
+            "method": "GET",
+            "scheme": "http",
+            "path": path,
+            "raw_path": path.encode(),
+            "root_path": "",
+            "query_string": b"",
+            "headers": [(b"if-modified-since", date.encode())] if conditional else [],
+            "server": ("testserver", 80),
+            "client": ("127.0.0.1", 1234),
+        }
+        response = asyncio.create_task(asset_cache_client.app(scope, receive, send))
+        try:
+            await asyncio.wait_for(body_started.wait(), timeout=5)
+            assert statuses == [304 if conditional else 200]
+            await asyncio.wait_for(asyncio.to_thread(write_asset), timeout=5)
+            assert not response.done(), "Response delivery should still be stalled"
+        finally:
+            release_body.set()
+            await asyncio.wait_for(response, timeout=5)
+
+    asyncio.run(check_response())
+    assert asset_cache_client.get(f"/v2/assets/{ASSET_ID}").json()["contract"]["name"] == "Changed during delivery"

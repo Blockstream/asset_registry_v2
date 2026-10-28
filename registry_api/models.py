@@ -640,3 +640,20 @@ class AdminAction(Base):
         Index("admin_actions_operation_sequence_idx", "operation", "audit_sequence"),
         Index("admin_actions_received_at_idx", "server_received_at", "audit_sequence"),
     )
+
+
+class AssetRegistryVersion(Base):
+    """Singleton modification time bumped at commit by asset table triggers."""
+
+    __tablename__ = "asset_registry_version"
+
+    singleton: Mapped[bool] = mapped_column(
+        Boolean, primary_key=True, server_default=text("true")
+    )
+    modified_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint("singleton", name="asset_registry_version_singleton_chk"),
+    )
