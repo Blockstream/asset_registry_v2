@@ -18,7 +18,8 @@ test:
     # `asset_registry` git submodule.
     GIT_SUBMODULE_STRATEGY: recursive
   before_script:
-    - pip install ".[dev]"
+    - pip install --require-hashes -r requirements-dev.txt
+    - pip install --no-deps -e .
   script:
     - pytest
   rules:
