@@ -4,6 +4,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Body, Depends, Header, Query, Request, status
 from pydantic import BeforeValidator
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 from starlette.responses import RedirectResponse, Response, StreamingResponse
 
 from registry_api.admin import submit_admin_asset_action, update_admin_annotations
@@ -11,8 +12,10 @@ from registry_api.admin_actions import (
     bootstrap_genesis_admin,
     submit_admin_lifecycle_action,
 )
+from registry_api.api.asset_cache import IfModifiedSince, prepare_asset_read
 from registry_api.api.query_validation import reject_unknown_query_parameters
 from registry_api.api.responses import (
+    ASSET_CACHE_RESPONSES,
     RATE_LIMIT_ERROR_RESPONSES,
     STANDARD_ERROR_RESPONSES,
 )
@@ -194,9 +197,13 @@ def register_asset_v2(
     tags=["Assets"],
     operation_id="searchAssetsV2",
     summary="Search and list assets",
+    responses=ASSET_CACHE_RESPONSES,
 )
 def search_assets_v2(
-    db: Annotated[Session, Depends(get_db)],
+    request: Request,
+    response: Response,
+    db: Annotated[Session, Depends(get_db, scope="function")],
+    if_modified_since: IfModifiedSince = None,
     page: Annotated[int, Query(ge=1, le=1_000_000)] = 1,
     page_size: Annotated[int, Query(ge=1, le=500)] = 50,
     sort: Literal[
@@ -274,8 +281,11 @@ def search_assets_v2(
         Rfc3339DateTime | None,
         Query(description="Return assets updated strictly after this timestamp."),
     ] = None,
-) -> AssetListResponse:
+) -> AssetListResponse | Response:
     """Return a paginated, filtered asset list with stable deterministic sorting."""
+    cached = prepare_asset_read(request, response, db, if_modified_since)
+    if cached is not None:
+        return cached
     return search_v2_assets(
         db,
         page=page,
@@ -300,15 +310,29 @@ def search_assets_v2(
     operation_id="getAllAssetsV2Json",
     summary="Get all v2-normalized assets as a single JSON object",
     responses={
+        **ASSET_CACHE_RESPONSES,
         200: {
             "model": dict[str, AssetResponse],
             "description": "Object keyed by asset ID.",
+            "headers": ASSET_CACHE_RESPONSES[200]["headers"],
         }
     },
 )
-def all_assets_v2_json() -> StreamingResponse:
+def all_assets_v2_json(
+    request: Request,
+    response: Response,
+    db: Annotated[Session, Depends(get_db, scope="function")],
+    if_modified_since: IfModifiedSince = None,
+) -> Response:
     """Compatibility endpoint for consumers that require one object keyed by asset ID."""
-    return StreamingResponse(stream_v2_all_json_bytes(), media_type="application/json")
+    cached = prepare_asset_read(request, response, db, if_modified_since)
+    if cached is not None:
+        return cached
+    return StreamingResponse(
+        stream_v2_all_json_bytes(),
+        media_type="application/json",
+        headers=dict(response.headers),
+    )
 
 
 @router.get(
@@ -432,12 +456,21 @@ def get_asset_icon_by_hash_v2(
     tags=["Assets"],
     operation_id="getAssetV2",
     summary="Get an asset by asset ID",
+    responses=ASSET_CACHE_RESPONSES,
 )
 def get_asset_v2(
     asset_id: AssetId,
-    db: Annotated[Session, Depends(get_db)],
-) -> AssetResponse:
+    request: Request,
+    response: Response,
+    db: Annotated[Session, Depends(get_db, scope="function")],
+    if_modified_since: IfModifiedSince = None,
+) -> AssetResponse | Response:
     """Return the active v2-normalized asset record for an asset ID."""
+    cached = prepare_asset_read(
+        request, response, db, if_modified_since, asset_id=asset_id
+    )
+    if cached is not None:
+        return cached
     return get_v2_asset(db, asset_id)
 
 
@@ -516,10 +549,12 @@ async def submit_asset_issuer_action_v2(
     ],
 ) -> IssuerActionResponse:
     """Apply a canonical signed issuer mutation linked to the latest issuer action hash."""
-    return submit_issuer_action(
+    payload = await request.body()
+    return await run_in_threadpool(
+        submit_issuer_action,
         db,
         asset_id=asset_id,
-        payload=await request.body(),
+        payload=payload,
         signature=asset_registry_signature,
     )
 
@@ -586,10 +621,12 @@ async def search_issuer_icon_proposals_v2(
     ],
 ) -> IssuerIconProposalListResponse:
     """Return only proposals whose submission was signed by the requesting key."""
-    return search_issuer_icon_proposals(
+    payload = await request.body()
+    return await run_in_threadpool(
+        search_issuer_icon_proposals,
         db,
         asset_id=asset_id,
-        payload=await request.body(),
+        payload=payload,
         signature=asset_registry_signature,
     )
 
@@ -613,10 +650,12 @@ async def migrate_legacy_asset(
     ],
 ) -> IssuerActionResponse:
     """Apply a signed admin migration without altering the asset's chain contract."""
-    return migrate_legacy_asset_to_v2(
+    payload = await request.body()
+    return await run_in_threadpool(
+        migrate_legacy_asset_to_v2,
         db,
         asset_id,
-        payload=await request.body(),
+        payload=payload,
         signature=asset_registry_admin_signature,
     )
 
@@ -640,9 +679,11 @@ async def submit_admin_action_v2(
     ],
 ) -> AdminActionResponse:
     """Manage admin keys and permissions through a canonical signed action."""
-    return submit_admin_lifecycle_action(
+    payload = await request.body()
+    return await run_in_threadpool(
+        submit_admin_lifecycle_action,
         db,
-        payload=await request.body(),
+        payload=payload,
         signature=asset_registry_admin_signature,
     )
 
@@ -667,9 +708,11 @@ async def search_pending_icon_proposals_v2(
     ],
 ) -> PendingIconProposalListResponse:
     """Return pending raw icons to an active admin with the review_icons permission."""
-    return search_pending_icon_proposals(
+    payload = await request.body()
+    return await run_in_threadpool(
+        search_pending_icon_proposals,
         db,
-        payload=await request.body(),
+        payload=payload,
         signature=asset_registry_admin_signature,
     )
 
@@ -724,10 +767,12 @@ async def update_admin_annotations_v2(
     ],
 ) -> AssetResponse:
     """Update registry-operated annotations with an authorized signed admin action."""
-    return update_admin_annotations(
+    payload = await request.body()
+    return await run_in_threadpool(
+        update_admin_annotations,
         db,
         asset_id=asset_id,
-        payload=await request.body(),
+        payload=payload,
         signature=asset_registry_admin_signature,
     )
 
@@ -750,16 +795,19 @@ async def submit_admin_asset_action_v2(
     ],
 ) -> AssetResponse:
     """Apply an authorized signed moderation or icon-review action to an asset."""
+    payload = await request.body()
     if isinstance(_action, (ApproveIconAction, RejectIconAction)):
-        return decide_icon_proposal(
+        return await run_in_threadpool(
+            decide_icon_proposal,
             db,
             asset_id=asset_id,
-            payload=await request.body(),
+            payload=payload,
             signature=asset_registry_admin_signature,
         )
-    return submit_admin_asset_action(
+    return await run_in_threadpool(
+        submit_admin_asset_action,
         db,
         asset_id=asset_id,
-        payload=await request.body(),
+        payload=payload,
         signature=asset_registry_admin_signature,
     )

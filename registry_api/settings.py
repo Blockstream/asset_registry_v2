@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     database_url: str = Field(
         default="postgresql+psycopg://asset_registry:asset_registry@postgres:5432/asset_registry"
     )
+    database_lock_timeout_seconds: float = Field(default=5.0, ge=0)
     network: str = "liquid"
     esplora_url: str | None = None
     http_timeout_seconds: float = 10.0

@@ -15,6 +15,7 @@ class ErrorCode(StrEnum):
     CHAIN_VERIFIER_ERROR = "chain_verifier_error"
     CHAIN_VERIFIER_NOT_CONFIGURED = "chain_verifier_not_configured"
     CHAIN_VERIFIER_UNREACHABLE = "chain_verifier_unreachable"
+    DATABASE_BUSY = "database_busy"
     DOMAIN_VERIFICATION_FAILED = "domain_verification_failed"
     DOMAIN_VERIFIER_UNREACHABLE = "domain_verifier_unreachable"
     FORBIDDEN = "forbidden"

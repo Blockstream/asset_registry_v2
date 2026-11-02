@@ -182,6 +182,7 @@ pytest tests/test_xxx.py --features
 | `ASSET_REGISTRY_DEBUG` | Debug mode | False |
 | `ASSET_REGISTRY_LOG_LEVEL` | Logging level | INFO |
 | `ASSET_REGISTRY_DATABASE_URL` | PostgreSQL connection URL | postgresql+psycopg://... |
+| `ASSET_REGISTRY_DATABASE_LOCK_TIMEOUT_SECONDS` | Max wait for a database lock before failing the statement; 0 disables | 5 |
 | `ASSET_REGISTRY_NETWORK` | Liquid network | liquid |
 | `ASSET_REGISTRY_ESPLORA_URL` | Blockstream API URL | https://blockstream.info/liquid/api |
 | `ASSET_REGISTRY_MAX_REQUEST_BODY_BYTES` | Max HTTP request body size; 0 allowed only when JSON depth guard is disabled | 1048576 |
@@ -327,6 +328,28 @@ Admin keys are managed through lifecycle actions (`add_admin`, `update_admin_per
 - Private keys
 
 ## Common Patterns
+
+### Async Routes and Blocking Work
+
+The database uses synchronous SQLAlchemy sessions and psycopg. Prefer plain
+`def` routes and dependencies for synchronous work; FastAPI runs them in its
+thread pool. Calling a synchronous helper directly from `async def` does not
+offload it and can block the event loop.
+
+When a route needs `await request.body()` for signed payload bytes, read the body
+asynchronously, then `await run_in_threadpool(service_function, db, ...)` from
+`starlette.concurrency`. Offload the entire synchronous service operation,
+including queries, flushes, commit/rollback, and response construction, rather
+than only `db.commit()`. Keep the original payload bytes for signature checking,
+and never use the same session concurrently across tasks or threads. Apply this
+rule to database-backed searches as well as writes, and to other blocking I/O.
+
+A synchronous database lock wait on the event loop can hang the service: a
+writer waits for a reader's lock, while the reader needs the event loop to
+complete dependency teardown and release that lock. Concurrency regression tests
+should verify that health requests and reader teardown can progress while a
+database operation waits. A lock timeout can bound database waits but does not
+replace correct thread-pool execution or resolve contention by itself.
 
 ### Database Transactions
 
