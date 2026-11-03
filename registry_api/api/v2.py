@@ -176,19 +176,22 @@ def register_asset_v2(
     chain_verifier = EsploraChainVerifier(
         settings.esplora_url, timeout=settings.http_timeout_seconds
     )
-    return register_v2_asset(
-        db,
-        request,
-        enforce_chain_verification=settings.enforce_chain_verification,
-        enforce_domain_verification=settings.enforce_domain_verification,
-        chain_verifier=chain_verifier,
-        fetch_text=proof_client.fetch_text,
-        resolve_txt=proof_client.resolve_txt_google,
-        domain_signature=asset_registry_signature,
-        registration_payload=canonical_json_bytes(
-            request.model_dump(mode="json", exclude_none=True)
-        ),
-    )
+    try:
+        return register_v2_asset(
+            db,
+            request,
+            enforce_chain_verification=settings.enforce_chain_verification,
+            enforce_domain_verification=settings.enforce_domain_verification,
+            chain_verifier=chain_verifier,
+            fetch_text=proof_client.fetch_text,
+            resolve_txt=proof_client.resolve_txt_google,
+            domain_signature=asset_registry_signature,
+            registration_payload=canonical_json_bytes(
+                request.model_dump(mode="json", exclude_none=True)
+            ),
+        )
+    finally:
+        chain_verifier.close()
 
 
 @router.get(

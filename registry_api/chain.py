@@ -1,12 +1,14 @@
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import NoReturn, Protocol
+from typing import NoReturn, Protocol, Self
 
 import httpx
 import wallycore as wally
+from pydantic import ValidationError
 
 from registry_api.errors import ErrorCode, RegistryError
+from registry_api.issuance import IssuanceMetadata
 
 logger = logging.getLogger(__name__)
 
@@ -15,17 +17,18 @@ logger = logging.getLogger(__name__)
 class IssuanceCommitment:
     asset_id: str
     contract_hash: str
-    issuance_txid: str | None = None
-    issuance_vin: int | None = None
 
 
 class ChainVerifier(Protocol):
-    def verify_issuance_commitment(self, commitment: IssuanceCommitment) -> None:
-        ...
+    def verify_issuance_commitment(
+        self, commitment: IssuanceCommitment
+    ) -> IssuanceMetadata | None: ...
 
 
 class UnconfiguredChainVerifier:
-    def verify_issuance_commitment(self, commitment: IssuanceCommitment) -> None:
+    def verify_issuance_commitment(
+        self, commitment: IssuanceCommitment
+    ) -> IssuanceMetadata | None:
         raise RegistryError(
             ErrorCode.CHAIN_VERIFIER_NOT_CONFIGURED,
             "chain issuance commitment verification is not configured",
@@ -36,7 +39,9 @@ class UnconfiguredChainVerifier:
 class TrustingChainVerifier:
     """Development-only verifier for tests and local wiring before chain integration."""
 
-    def verify_issuance_commitment(self, commitment: IssuanceCommitment) -> None:
+    def verify_issuance_commitment(
+        self, commitment: IssuanceCommitment
+    ) -> IssuanceMetadata | None:
         return None
 
 
@@ -48,7 +53,9 @@ def _internal_hash_to_display(hash_bytes: bytes) -> str:
     return hash_bytes[::-1].hex()
 
 
-def generate_asset_entropy(prevout_txid: str, prevout_vout: int, contract_hash: str) -> bytes:
+def generate_asset_entropy(
+    prevout_txid: str, prevout_vout: int, contract_hash: str
+) -> bytes:
     return wally.tx_elements_issuance_generate_entropy(
         _display_hash_to_internal(prevout_txid),
         prevout_vout,
@@ -57,11 +64,15 @@ def generate_asset_entropy(prevout_txid: str, prevout_vout: int, contract_hash: 
 
 
 def asset_id_from_entropy(entropy: bytes) -> str:
-    return _internal_hash_to_display(wally.tx_elements_issuance_calculate_asset(entropy))
+    return _internal_hash_to_display(
+        wally.tx_elements_issuance_calculate_asset(entropy)
+    )
 
 
 def derive_asset_id(prevout_txid: str, prevout_vout: int, contract_hash: str) -> str:
-    return asset_id_from_entropy(generate_asset_entropy(prevout_txid, prevout_vout, contract_hash))
+    return asset_id_from_entropy(
+        generate_asset_entropy(prevout_txid, prevout_vout, contract_hash)
+    )
 
 
 @dataclass(frozen=True)
@@ -73,22 +84,30 @@ class ParsedIssuanceInput:
 
 def parse_issuance_input(tx_hex: str, vin: int) -> ParsedIssuanceInput:
     if vin < 0:
-        raise RegistryError(ErrorCode.CHAIN_VERIFICATION_FAILED, "issuance transaction missing input")
+        raise RegistryError(
+            ErrorCode.CHAIN_VERIFICATION_FAILED, "issuance transaction missing input"
+        )
 
     try:
         tx = wally.tx_from_hex(tx_hex.strip(), wally.WALLY_TX_FLAG_USE_ELEMENTS)
     except (TypeError, ValueError) as exc:
-        raise RegistryError(ErrorCode.CHAIN_VERIFICATION_FAILED, "invalid issuance transaction") from exc
+        raise RegistryError(
+            ErrorCode.CHAIN_VERIFICATION_FAILED, "invalid issuance transaction"
+        ) from exc
 
     if vin >= wally.tx_get_num_inputs(tx):
-        raise RegistryError(ErrorCode.CHAIN_VERIFICATION_FAILED, "issuance transaction missing input")
+        raise RegistryError(
+            ErrorCode.CHAIN_VERIFICATION_FAILED, "issuance transaction missing input"
+        )
 
     has_issuance = (
         wally.tx_get_input_issuance_amount_len(tx, vin) > 0
         or wally.tx_get_input_inflation_keys_len(tx, vin) > 0
     )
     if not has_issuance:
-        raise RegistryError(ErrorCode.CHAIN_VERIFICATION_FAILED, "input has no issuance")
+        raise RegistryError(
+            ErrorCode.CHAIN_VERIFICATION_FAILED, "input has no issuance"
+        )
 
     asset_entropy = wally.tx_get_input_entropy(tx, vin)
     return ParsedIssuanceInput(
@@ -106,50 +125,111 @@ class EsploraChainVerifier:
         timeout: float = 10.0,
         get_json: Callable[[str], dict] | None = None,
         get_text: Callable[[str], str] | None = None,
+        client: httpx.Client | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self._get_json = get_json
         self._get_text = get_text
+        self._custom_client = client is not None
+        self._client = client
 
-    def verify_issuance_commitment(self, commitment: IssuanceCommitment) -> None:
+    @property
+    def client(self) -> httpx.Client:
+        if self._client is None:
+            self._client = httpx.Client(timeout=self.timeout)
+        return self._client
+
+    def close(self) -> None:
+        if self._client is not None and not self._custom_client:
+            self._client.close()
+            self._client = None
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        self.close()
+
+    def verify_issuance_commitment(
+        self, commitment: IssuanceCommitment
+    ) -> IssuanceMetadata:
         asset_data = self._json(f"/asset/{commitment.asset_id}")
-        issuance_txin = asset_data.get("issuance_txin") or {}
-        issuance_prevout = asset_data.get("issuance_prevout") or {}
-        txid = issuance_txin.get("txid")
-        vin = issuance_txin.get("vin")
-        prevout_txid = issuance_prevout.get("txid")
-        prevout_vout = issuance_prevout.get("vout")
-        if not isinstance(txid, str) or not isinstance(vin, int) or not isinstance(prevout_txid, str) or not isinstance(prevout_vout, int):
-            raise RegistryError(ErrorCode.CHAIN_VERIFICATION_FAILED, "Esplora asset response is missing issuance metadata")
+        try:
+            issuance = IssuanceMetadata.from_payload(asset_data)
+        except ValidationError as exc:
+            raise RegistryError(
+                ErrorCode.CHAIN_VERIFICATION_FAILED,
+                "Esplora asset response has invalid issuance metadata",
+            ) from exc
+        if issuance.issuance_txin is None or issuance.issuance_prevout is None:
+            raise RegistryError(
+                ErrorCode.CHAIN_VERIFICATION_FAILED,
+                "Esplora asset response is missing issuance metadata",
+            )
+        txid, vin = issuance.issuance_txin.txid, issuance.issuance_txin.vin
+        prevout_txid = issuance.issuance_prevout.txid
+        prevout_vout = issuance.issuance_prevout.vout
 
         tx_hex = self._text(f"/tx/{txid}/hex")
         status = self._json(f"/tx/{txid}/status")
         if not status.get("confirmed"):
-            raise RegistryError(ErrorCode.CHAIN_VERIFICATION_FAILED, "issuance transaction is unconfirmed")
+            raise RegistryError(
+                ErrorCode.CHAIN_VERIFICATION_FAILED,
+                "issuance transaction is unconfirmed",
+            )
 
         issuance_input = parse_issuance_input(tx_hex, vin)
-        if (issuance_input.previous_txid, issuance_input.previous_vout) != (prevout_txid, prevout_vout):
-            raise RegistryError(ErrorCode.CHAIN_VERIFICATION_FAILED, "issuance prevout mismatch")
+        if (issuance_input.previous_txid, issuance_input.previous_vout) != (
+            prevout_txid,
+            prevout_vout,
+        ):
+            raise RegistryError(
+                ErrorCode.CHAIN_VERIFICATION_FAILED, "issuance prevout mismatch"
+            )
         if issuance_input.asset_entropy != commitment.contract_hash:
-            raise RegistryError(ErrorCode.CHAIN_VERIFICATION_FAILED, "issuance entropy does not match contract hash")
+            raise RegistryError(
+                ErrorCode.CHAIN_VERIFICATION_FAILED,
+                "issuance entropy does not match contract hash",
+            )
 
-        derived_asset_id = derive_asset_id(prevout_txid, prevout_vout, commitment.contract_hash)
+        derived_asset_id = derive_asset_id(
+            prevout_txid, prevout_vout, commitment.contract_hash
+        )
         if derived_asset_id != commitment.asset_id:
             raise RegistryError(
                 ErrorCode.CHAIN_VERIFICATION_FAILED,
                 "asset id does not match issuance commitment",
-                {"expected_asset_id": derived_asset_id, "actual_asset_id": commitment.asset_id},
+                {
+                    "expected_asset_id": derived_asset_id,
+                    "actual_asset_id": commitment.asset_id,
+                },
             )
+        return issuance
 
     def _json(self, path: str) -> dict:
         if self._get_json is not None:
             return self._get_json(path)
         response = self._get(path)
         try:
-            return response.json()
+            payload = response.json()
         except ValueError as exc:
-            self._raise_esplora_service_error(path, response.status_code, response.text, "Esplora returned invalid JSON", exc)
+            self._raise_esplora_service_error(
+                path,
+                response.status_code,
+                response.text,
+                "Esplora returned invalid JSON",
+                exc,
+            )
+        if not isinstance(payload, dict):
+            self._raise_esplora_service_error(
+                path,
+                response.status_code,
+                response.text[:500],
+                "Esplora returned a non-object JSON response",
+                None,
+            )
+        return payload
 
     def _text(self, path: str) -> str:
         if self._get_text is not None:
@@ -159,8 +239,7 @@ class EsploraChainVerifier:
 
     def _get(self, path: str) -> httpx.Response:
         try:
-            with httpx.Client(timeout=self.timeout) as client:
-                response = client.get(f"{self.base_url}{path}")
+            response = self.client.get(f"{self.base_url}{path}")
         except httpx.RequestError as exc:
             raise RegistryError(
                 ErrorCode.CHAIN_VERIFIER_UNREACHABLE,
