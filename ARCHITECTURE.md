@@ -87,14 +87,16 @@ During migration, supported legacy writes can be shadow-forwarded to the origina
 
 SQLAlchemy models use UUID keys, explicit constraints, and normalized child tables. Service-layer writes are transactional and roll back on failure. Serialized fragments are cached for large compatibility listings and refreshed with the underlying asset state.
 
-Asset JSON reads (`GET /`, `/index.json`, `/{asset_id}`, `/v2/assets`,
+Asset JSON reads (`GET /`, `/index.json`, `/icons.json`, `/{asset_id}`, `/v2/assets`,
 `/v2/assets/all.json`, and `/v2/assets/{asset_id}`) send `Last-Modified` and
 `Cache-Control: no-cache`. Clients can send the returned HTTP date in
 `If-Modified-Since` to receive a bodyless `304 Not Modified` when unchanged.
 All of these reads share one registry-wide modification time stored in
 `asset_registry_version`, which conservatively invalidates every lookup, filter,
-and page on any asset change, including removals. Deferred constraint triggers on
-the asset tables bump it at commit time from the database clock while holding the
+and page on any asset change, including removals. The icon map uses the same
+timestamp, so icon changes invalidate it, as do unrelated asset changes.
+Deferred constraint triggers on the asset tables bump it at commit time from
+the database clock while holding the
 row lock, so it follows commit order regardless of which code path (ORM or raw
 SQL) wrote the change. Each commit advances the time by at least one second, so
 a commit still in flight when a read sees the previous time always gets a later

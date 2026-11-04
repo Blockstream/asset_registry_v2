@@ -161,6 +161,7 @@ def list_assets_legacy_root(
     operation_id="getIconsLegacy",
     summary="Get approved asset icons",
     responses={
+        **ASSET_CACHE_RESPONSES,
         200: {
             "description": "Base64 PNG icons keyed by asset ID.",
             "content": {
@@ -171,13 +172,21 @@ def list_assets_legacy_root(
                     }
                 }
             },
+            "headers": ASSET_CACHE_RESPONSES[200]["headers"],
         }
     },
 )
 def get_icons_legacy(
+    request: Request,
+    response: Response,
+    db: Annotated[Session, Depends(get_db, scope="function")],
     settings: Annotated[Settings, Depends(get_settings)],
-) -> StreamingResponse:
+    if_modified_since: IfModifiedSince = None,
+) -> Response:
     """Return current approved icons as raw Base64 values keyed by asset ID."""
+    cached = prepare_asset_read(request, response, db, if_modified_since)
+    if cached is not None:
+        return cached
     # Compatibility fallback until the Liquid policy asset has a registry-backed icon.
     # stream_icon_map_bytes gives a future approved database icon precedence.
     fallback_icons = (
@@ -188,6 +197,7 @@ def get_icons_legacy(
     return StreamingResponse(
         stream_icon_map_bytes(fallback_icons=fallback_icons),
         media_type="application/json",
+        headers=dict(response.headers),
     )
 
 

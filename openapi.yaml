@@ -315,15 +315,38 @@ paths:
       summary: Get approved asset icons
       description: Return current approved icons as raw Base64 values keyed by asset ID.
       operationId: getIconsLegacy
+      parameters:
+      - name: If-Modified-Since
+        in: header
+        required: false
+        schema:
+          description: HTTP date from Last-Modified; returns 304 if assets are unchanged.
+          title: If-Modified-Since
+          type: string
+        description: HTTP date from Last-Modified; returns 304 if assets are unchanged.
       responses:
         '200':
           description: Base64 PNG icons keyed by asset ID.
           content:
             application/json:
               schema:
+                type: object
                 additionalProperties:
                   type: string
-                type: object
+          headers:
+            Last-Modified:
+              description: Asset modification time in HTTP-date format, when available.
+              schema:
+                type: string
+            Cache-Control:
+              description: Requires revalidation before reusing the cached response.
+              schema:
+                type: string
+                enum:
+                - no-cache
+            Vary:
+              schema:
+                type: string
         '400':
           description: Malformed or semantically invalid request.
           content:
@@ -369,6 +392,28 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '304':
+          description: Assets have not changed since If-Modified-Since; no response body.
+          headers:
+            Last-Modified:
+              description: Asset modification time in HTTP-date format, when available.
+              schema:
+                type: string
+            Cache-Control:
+              description: Requires revalidation before reusing the cached response.
+              schema:
+                type: string
+                enum:
+                - no-cache
+            Vary:
+              schema:
+                type: string
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /contract/validate:
     post:
       tags:
