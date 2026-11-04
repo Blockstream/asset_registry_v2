@@ -1965,7 +1965,10 @@ export interface operations {
     getIconsLegacy: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description HTTP date from Last-Modified; returns 304 if assets are unchanged. */
+                "If-Modified-Since"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -1974,6 +1977,11 @@ export interface operations {
             /** @description Base64 PNG icons keyed by asset ID. */
             200: {
                 headers: {
+                    /** @description Asset modification time in HTTP-date format, when available. */
+                    "Last-Modified"?: string;
+                    /** @description Requires revalidation before reusing the cached response. */
+                    "Cache-Control"?: "no-cache";
+                    Vary?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -1981,6 +1989,18 @@ export interface operations {
                         [key: string]: string;
                     };
                 };
+            };
+            /** @description Assets have not changed since If-Modified-Since; no response body. */
+            304: {
+                headers: {
+                    /** @description Asset modification time in HTTP-date format, when available. */
+                    "Last-Modified"?: string;
+                    /** @description Requires revalidation before reusing the cached response. */
+                    "Cache-Control"?: "no-cache";
+                    Vary?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Malformed or semantically invalid request. */
             400: {
@@ -2034,6 +2054,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
             /** @description A required verification service is unavailable. */

@@ -7,12 +7,22 @@ from fastapi.testclient import TestClient
 
 from registry_api import db as db_module
 from registry_api.constants import LIQUID_MAINNET_POLICY_ASSET_ID
+from registry_api.db import get_db
 from registry_api.icons import (
     decode_legacy_icon,
     liquid_mainnet_policy_asset_icon_base64,
 )
 from registry_api.main import create_app
 from registry_api.settings import Settings, get_settings
+
+
+@pytest.fixture()
+def app():
+    app = create_app()
+    db = MagicMock()
+    db.execute.return_value.one_or_none.return_value = None
+    app.dependency_overrides[get_db] = lambda: db
+    return app
 
 
 def test_bundled_liquid_policy_asset_icon_is_a_valid_legacy_icon() -> None:
@@ -30,10 +40,9 @@ def test_bundled_liquid_policy_asset_icon_is_a_valid_legacy_icon() -> None:
     [("liquid", True), ("liquidtestnet", False)],
 )
 def test_legacy_icons_policy_asset_fallback_is_liquid_mainnet_only(
-    monkeypatch, network: str, includes_policy_asset: bool
+    monkeypatch, app, network: str, includes_policy_asset: bool
 ) -> None:
     _stub_streamed_icon_rows(monkeypatch, [])
-    app = create_app()
     app.dependency_overrides[get_settings] = lambda: Settings(network=network)
 
     response = TestClient(app).get("/icons.json")
@@ -49,7 +58,7 @@ def test_legacy_icons_policy_asset_fallback_is_liquid_mainnet_only(
 
 
 def test_database_policy_asset_icon_takes_precedence_and_preserves_order(
-    monkeypatch,
+    monkeypatch, app
 ) -> None:
     lower_asset_id = "0" * 64
     higher_asset_id = "f" * 64
@@ -62,7 +71,6 @@ def test_database_policy_asset_icon_takes_precedence_and_preserves_order(
             (higher_asset_id, b"higher icon"),
         ],
     )
-    app = create_app()
     app.dependency_overrides[get_settings] = lambda: Settings(network="liquid")
 
     response = TestClient(app).get("/icons.json")
