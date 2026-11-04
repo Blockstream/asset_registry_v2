@@ -30,6 +30,10 @@ Audit entries record the registry's decision and accepted action payloads. They 
 
 ## Local Development
 
+The Dockerfile builds dependencies with Python 3.13 on Debian 13 and runs the
+service in `gcr.io/distroless/python3-debian13:nonroot`. The runtime includes
+Uvicorn and Alembic console commands, but no shell or pip.
+
 Start PostgreSQL and the API container:
 
 ```bash
