@@ -53,7 +53,6 @@ from registry_api.schemas import (
 from registry_api.signatures import _bitcoin_signed_message_hash
 from registry_api.v2_assets import get_v2_asset, register_v2_asset
 
-
 pytestmark = pytest.mark.skipif(
     not os.getenv("ASSET_REGISTRY_TEST_DATABASE_URL"),
     reason="ASSET_REGISTRY_TEST_DATABASE_URL is required for icon tests",
@@ -472,6 +471,101 @@ def test_content_addressed_icon_endpoints_and_cache_headers(
         )
         assert missing_wildcard_match.status_code == 404
         assert missing_wildcard_match.json()["error"] == "icon_not_found"
+
+
+@pytest.mark.parametrize("change", ["publish", "replace", "approve", "deregister"])
+def test_legacy_icon_cache_invalidates_after_icon_changes(
+    session_factory, registered_asset, monkeypatch, change
+) -> None:
+    from registry_api import db as db_module
+
+    monkeypatch.setattr(db_module, "SessionLocal", session_factory)
+    app = create_app()
+
+    def test_db():
+        with session_factory() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = test_db
+    with session_factory() as session:
+        if change in {"replace", "deregister"}:
+            import_legacy_icons(
+                session, {ASSET_ID: base64.b64encode(png_bytes()).decode()}
+            )
+        elif change == "approve":
+            image_data = png_bytes(color=(120, 80, 40, 0))
+            encoded = base64.b64encode(image_data).decode()
+            proposal = submit_proposal(session, image_data)
+        # Put the validator outside the current second without sleeping.
+        session.execute(
+            text(
+                "update asset_registry_version set modified_at = '2020-01-01T00:00:00Z'"
+            )
+        )
+        session.commit()
+
+    with TestClient(app) as client:
+        original = client.get("/icons.json")
+        assert original.status_code == 200
+        headers = {"If-Modified-Since": original.headers["Last-Modified"]}
+        assert client.get("/icons.json", headers=headers).status_code == 304
+
+        with session_factory() as session:
+            if change == "deregister":
+                action = {
+                    "signing_context": "liquid-asset-registry-action-v1",
+                    "asset_id": ASSET_ID,
+                    "operation": "deregister",
+                    "prev_action_hash": get_latest_action_hash(
+                        session, ASSET_ID
+                    ).action_hash,
+                    "timestamp": iso(NOW),
+                    "nonce": "nonce-deregister-cached-icon",
+                }
+                submit_issuer_action(
+                    session,
+                    asset_id=ASSET_ID,
+                    payload=canonical_json(action).encode(),
+                    signature=sign(action, ISSUER_PRIVATE_KEY),
+                    now=NOW,
+                )
+            elif change == "approve":
+                action = admin_action(
+                    "approve_icon",
+                    proposal.proposal.icon_hash,
+                    "nonce-approve-cached-icon",
+                )
+                decide_icon_proposal(
+                    session,
+                    asset_id=ASSET_ID,
+                    payload=canonical_json(action).encode(),
+                    signature=sign(action, ADMIN_PRIVATE_KEY),
+                    now=NOW,
+                )
+            else:
+                image_data = png_bytes(color=(120, 80, 40, 0))
+                encoded = base64.b64encode(image_data).decode()
+                action = admin_action(
+                    "set_icon",
+                    hashlib.sha256(image_data).hexdigest(),
+                    "nonce-set-cached-icon",
+                )
+                set_admin_asset_icon(
+                    session,
+                    asset_id=ASSET_ID,
+                    action=SetIconAction.model_validate(action),
+                    icon=encoded,
+                    signature=sign(action, ADMIN_PRIVATE_KEY),
+                    now=NOW,
+                )
+
+        updated = client.get("/icons.json", headers=headers)
+        assert updated.status_code == 200
+        assert updated.headers["Last-Modified"] != original.headers["Last-Modified"]
+        if change == "deregister":
+            assert ASSET_ID not in updated.json()
+        else:
+            assert updated.json()[ASSET_ID] == encoded
 
 
 def test_wrong_icon_hash_does_not_load_current_image_bytes(

@@ -16,7 +16,7 @@ PUBKEY = "02" + "11" * 32
 MODIFIED = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
 NOW = datetime(2026, 1, 1, 12, 5, 0, tzinfo=UTC)
 HTTP_DATE = "Thu, 01 Jan 2026 12:00:00 GMT"
-PATHS = ["/", "/index.json", f"/{ASSET_ID}", "/v2/assets", "/v2/assets/all.json", f"/v2/assets/{ASSET_ID}"]
+PATHS = ["/", "/index.json", "/icons.json", f"/{ASSET_ID}", "/v2/assets", "/v2/assets/all.json", f"/v2/assets/{ASSET_ID}"]
 
 
 @pytest.fixture()
@@ -40,17 +40,19 @@ def cached_client(monkeypatch):
     legacy_lookup = Mock(return_value={"asset_id": ASSET_ID})
     legacy_stream = Mock(side_effect=lambda: iter([b"{} "]))
     v2_stream = Mock(side_effect=lambda: iter([b"{} "]))
+    icon_stream = Mock(side_effect=lambda **kwargs: iter([b"{} "]))
     monkeypatch.setattr(v2, "get_v2_asset", lookup)
     monkeypatch.setattr(v2, "search_v2_assets", search)
     monkeypatch.setattr(legacy, "get_legacy_asset", legacy_lookup)
     monkeypatch.setattr(legacy, "stream_legacy_all_json_bytes", legacy_stream)
     monkeypatch.setattr(v2, "stream_v2_all_json_bytes", v2_stream)
+    monkeypatch.setattr(legacy, "stream_icon_map_bytes", icon_stream)
     db = Mock()
     db.execute.return_value.one_or_none.return_value = (MODIFIED, NOW)
     app = create_app()
     app.dependency_overrides[get_db] = lambda: db
     with TestClient(app) as client:
-        yield client, db, [lookup, search, legacy_lookup, legacy_stream, v2_stream]
+        yield client, db, [lookup, search, legacy_lookup, legacy_stream, v2_stream, icon_stream]
 
 
 @pytest.mark.parametrize("path", PATHS)
@@ -116,7 +118,7 @@ def test_if_none_match_takes_precedence(cached_client, path):
     assert result.status_code == 200
 
 
-@pytest.mark.parametrize("path", ["/", "/index.json", "/v2/assets", "/v2/assets/all.json"])
+@pytest.mark.parametrize("path", ["/", "/index.json", "/icons.json", "/v2/assets", "/v2/assets/all.json"])
 def test_unknown_modification_time_does_not_return_304(cached_client, path):
     client, db, _ = cached_client
     db.execute.return_value.one_or_none.return_value = None
@@ -135,7 +137,7 @@ def test_missing_assets_still_return_404(cached_client, path, reader_index):
     assert "Last-Modified" not in result.headers
 
 
-@pytest.mark.parametrize("path", ["/index.json?unknown=1", "/v2/assets?page=0", "/v2/assets?sort=invalid"])
+@pytest.mark.parametrize("path", ["/index.json?unknown=1", "/icons.json?unknown=1", "/v2/assets?page=0", "/v2/assets?sort=invalid"])
 def test_conditional_requests_preserve_request_validation(cached_client, path):
     client, _, _ = cached_client
     assert client.get(path, headers={"If-Modified-Since": HTTP_DATE}).status_code in {400, 422}
