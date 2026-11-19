@@ -52,8 +52,6 @@ See `schema.md` for full design. Key tables:
 |-------|---------|
 | `assets` | Registry records for Liquid assets; UUID primary key (`asset_uuid`), blockchain ID indexed (`asset_id`) |
 | `asset_mutable_metadata` | Versioned metadata root for each asset |
-| `asset_trading_venues` | Trading venue data (normalized rows) |
-| `asset_category_tags` | Category tag data (normalized rows) |
 | `asset_custom_attributes` | Custom attributes (key-value rows) |
 | `asset_admin_annotations` | Admin moderation state (featured, malicious, delisted) |
 | `issuer_pubkey_history` | Issuer key rotation history with validity intervals |

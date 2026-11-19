@@ -26,11 +26,8 @@ from registry_api.validation import (
     normalize_asset_id,
     normalize_domain,
     normalize_pubkey,
-    normalize_url,
     reject_nul_characters,
-    require_category_tag,
     require_controlled_value,
-    require_trading_venue,
     validate_name,
     validate_precision,
     validate_ticker,
@@ -59,15 +56,6 @@ AssetType = Annotated[
             "enum": ["AMP_asset", "stablecoin", "security_token", "other"]
         }
     ),
-]
-CategoryTag = Annotated[
-    str,
-    Field(
-        json_schema_extra={"enum": ["stablecoin", "bond", "fixed-income", "tokenized"]}
-    ),
-]
-TradingVenueName = Annotated[
-    str, Field(json_schema_extra={"enum": ["sideswap", "bitfinex"]})
 ]
 AdminPermission = Annotated[
     str,
@@ -385,44 +373,8 @@ class ContractMetadataResponse(BaseModel):
         return normalize_pubkey(value) if value is not None else None
 
 
-class TradingVenue(StrictModel):
-    venue: TradingVenueName
-    url: str = Field(
-        max_length=2048,
-        pattern=r"^[hH][tT][tT][pP][sS]?://[^\s]+$",
-        json_schema_extra={"format": "uri"},
-    )
-
-    @field_validator("venue")
-    @classmethod
-    def validate_venue(cls, value: str) -> str:
-        return require_trading_venue(value)
-
-    @field_validator("url")
-    @classmethod
-    def validate_trading_url(cls, value: str) -> str:
-        return normalize_url(value)
-
-
 class MutableMetadata(StrictModel):
-    trading_venues: list[TradingVenue] = Field(default_factory=list)
-    category_tags: list[CategoryTag] = Field(
-        default_factory=list, json_schema_extra={"uniqueItems": True}
-    )
     custom: dict[CustomKey, LegacyExtraValue] = Field(default_factory=dict)
-
-    @field_validator("category_tags")
-    @classmethod
-    def validate_category_tags(cls, value: list[str]) -> list[str]:
-        seen = set()
-        normalized_tags = []
-        for tag in value:
-            tag = require_category_tag(tag)
-            if tag in seen:
-                raise ValueError("category_tags must be unique")
-            seen.add(tag)
-            normalized_tags.append(tag)
-        return normalized_tags
 
     @field_validator("custom")
     @classmethod
@@ -596,25 +548,6 @@ class BaseIssuerAction(StrictModel):
         return value
 
 
-class ReplaceCategoryTagsAction(BaseIssuerAction):
-    operation: Literal[Operation.REPLACE_CATEGORY_TAGS]  # pyright: ignore[reportInvalidTypeForm]
-    mutable_schema_version: int = Field(ge=1)
-    category_tags: list[CategoryTag] = Field(json_schema_extra={"uniqueItems": True})
-
-    @field_validator("category_tags")
-    @classmethod
-    def validate_category_tags(cls, value: list[str]) -> list[str]:
-        return MutableMetadata(
-            category_tags=value, trading_venues=[], custom={}
-        ).category_tags
-
-
-class ReplaceTradingVenuesAction(BaseIssuerAction):
-    operation: Literal[Operation.REPLACE_TRADING_VENUES]  # pyright: ignore[reportInvalidTypeForm]
-    mutable_schema_version: int = Field(ge=1)
-    trading_venues: list[TradingVenue]
-
-
 class ReplaceCustomAction(BaseIssuerAction):
     operation: Literal[Operation.REPLACE_CUSTOM]  # pyright: ignore[reportInvalidTypeForm]
     mutable_schema_version: int = Field(ge=1)
@@ -687,9 +620,7 @@ class IconProposalRequest(StrictModel):
 
 
 IssuerAction = Annotated[
-    ReplaceCategoryTagsAction
-    | ReplaceTradingVenuesAction
-    | ReplaceCustomAction
+    ReplaceCustomAction
     | SetCustomFieldAction
     | DeleteCustomFieldAction
     | DeregisterAction

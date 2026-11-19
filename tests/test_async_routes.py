@@ -33,7 +33,7 @@ from registry_api.schemas import AssetListResponse
             "POST",
             f"/v2/assets/{ASSET_ID}/actions",
             "submit_issuer_action",
-            ISSUER_ACTION_EXAMPLES["replaceCategoryTags"]["value"],
+            ISSUER_ACTION_EXAMPLES["replaceCustom"]["value"],
             id="issuer-action",
         ),
         pytest.param(

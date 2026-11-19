@@ -319,7 +319,8 @@ def test_populated_historical_upgrade_keeps_cached_responses_valid(connection, n
         ),
         {"uuid": asset_uuid},
     )
-    _upgrade(connection, 7, 17)
+    # 0018 retires the seeded tags and venues and resynchronizes updated_at.
+    _upgrade(connection, 7, 18)
     v2 = connection.scalar(
         text("SELECT v2_json FROM asset_serialized_fragments WHERE asset_uuid = :uuid"),
         {"uuid": asset_uuid},

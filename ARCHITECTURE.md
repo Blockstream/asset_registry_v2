@@ -29,7 +29,7 @@ The blockchain `asset_id` is the stable external identity. Database rows use UUI
 
 Contract metadata is immutable after registration. For version `2` contracts, `initial_issuer_pubkey` is required inside the contract and therefore included in its contract hash. `current_issuer_pubkey` is registry state initialized from that key and changed only through an accepted rotation action.
 
-Issuer-controlled mutable metadata is normalized into category tags, trading venues, and custom attributes. Admin annotations—such as featured, malicious, delisted, and asset type—are stored separately and cannot rewrite issuer metadata.
+Issuer-controlled mutable metadata is normalized into custom attributes. Issuer category tags and trading venues were retired in revision `0018_retire_issuer_metadata`; see `schema.md`. Admin annotations—such as featured, malicious, delisted, and asset type—are stored separately and cannot rewrite issuer metadata.
 
 ## Signed Actions and Canonical JSON
 

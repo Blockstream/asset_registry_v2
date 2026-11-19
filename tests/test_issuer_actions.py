@@ -59,8 +59,6 @@ def cleanup_database(engine) -> None:
         connection.execute(text("delete from issuer_pubkey_history"))
         connection.execute(text("delete from asset_admin_annotations"))
         connection.execute(text("delete from asset_custom_attributes"))
-        connection.execute(text("delete from asset_category_tags"))
-        connection.execute(text("delete from asset_trading_venues"))
         connection.execute(text("delete from asset_mutable_metadata"))
         connection.execute(text("delete from actions"))
         connection.execute(text("delete from assets"))
@@ -79,8 +77,6 @@ def v2_request() -> RegisterAssetRequest:
                 "version": 2,
             },
             "mutable": {
-                "category_tags": ["stablecoin"],
-                "trading_venues": [{"venue": "sideswap", "url": "https://sideswap.io/assets/ACTION"}],
                 "custom": {"isin": "OLD"},
             },
         }
@@ -105,15 +101,6 @@ def legacy_request() -> LegacyAssetRequest:
 
 def test_replace_and_delete_mutable_metadata(session_factory, registered_asset) -> None:
     with session_factory() as session:
-        tags_response = submit_signed(session, replace_category_tags_action(["bond", "tokenized"], "nonce-tags"))
-        venues_response = submit_signed(
-            session,
-            replace_trading_venues_action(
-                [{"venue": "bitfinex", "url": "https://bitfinex.com/t/ACTION"}],
-                "nonce-venues",
-                timestamp=NOW + timedelta(seconds=1),
-            ),
-        )
         replace_custom_response = submit_signed(
             session,
             replace_custom_action({"issuer_note": "Series A"}, "nonce-replace-custom", timestamp=NOW + timedelta(seconds=2)),
@@ -127,33 +114,39 @@ def test_replace_and_delete_mutable_metadata(session_factory, registered_asset) 
             delete_custom_field_action("isin", "nonce-delete", timestamp=NOW + timedelta(seconds=4)),
         )
 
-    assert tags_response.asset.mutable.category_tags == ["bond", "tokenized"]
-    assert venues_response.asset.mutable.trading_venues[0].venue == "bitfinex"
     assert replace_custom_response.asset.mutable.custom == {"issuer_note": "Series A"}
     assert custom_response.asset.mutable.custom["isin"] == "NEW"
     assert custom_response.asset.mutable.custom["issuer_note"] == "Series A"
     assert "isin" not in delete_response.asset.mutable.custom
 
 
-def test_replace_tags_and_trading_venues_normalize_case(session_factory, registered_asset) -> None:
-    with session_factory() as session:
-        tags_response = submit_signed(session, replace_category_tags_action(["Bond", "TOKENIZED"], "nonce-case-tags"))
-        venues_response = submit_signed(
-            session,
-            replace_trading_venues_action(
-                [{"venue": "BITFINEX", "url": "HTTPS://BITFINEX.COM/t/ACTION"}],
-                "nonce-case-venues",
-                timestamp=NOW + timedelta(seconds=1),
-            ),
-        )
+@pytest.mark.parametrize(
+    "action",
+    [
+        {"operation": "replace_category_tags", "category_tags": ["bond"]},
+        {
+            "operation": "replace_trading_venues",
+            "trading_venues": [{"venue": "bitfinex", "url": "https://bitfinex.com/t/ACTION"}],
+        },
+    ],
+)
+def test_rejects_retired_issuer_metadata_operations(session_factory, registered_asset, action) -> None:
+    retired = {
+        "signing_context": "liquid-asset-registry-action-v1",
+        "asset_id": ASSET_ID,
+        "mutable_schema_version": 1,
+        "timestamp": iso(NOW),
+        "nonce": "nonce-retired",
+        **action,
+    }
 
-    assert tags_response.asset.mutable.category_tags == ["bond", "tokenized"]
-    assert tags_response.audit_entry.action["category_tags"] == ["bond", "tokenized"]
-    assert venues_response.asset.mutable.trading_venues[0].venue == "bitfinex"
-    assert venues_response.asset.mutable.trading_venues[0].url == "https://bitfinex.com/t/ACTION"
-    assert venues_response.audit_entry.action["trading_venues"] == [
-        {"venue": "bitfinex", "url": "https://bitfinex.com/t/ACTION"}
-    ]
+    with session_factory() as session:
+        with pytest.raises(RegistryError) as exc_info:
+            submit_signed(session, retired)
+        inserted = session.execute(text("select count(*) from actions where nonce = 'nonce-retired'")).scalar_one()
+
+    assert exc_info.value.error == "validation_error"
+    assert inserted == 0
 
 
 def test_deregister_action_marks_asset_inactive(session_factory, registered_asset) -> None:
@@ -178,7 +171,7 @@ def test_rejects_v2_issuer_action_for_unmigrated_legacy_asset(session_factory) -
 
 
 def test_nonce_idempotency_and_conflict(session_factory, registered_asset) -> None:
-    action = replace_category_tags_action(["bond"], "nonce-replay")
+    action = set_custom_field_action("isin", "bond", "nonce-replay")
     with session_factory() as session:
         first = submit_signed(session, action)
         retry = submit_signed(session, action)
@@ -188,7 +181,7 @@ def test_nonce_idempotency_and_conflict(session_factory, registered_asset) -> No
     assert retry.asset is None
     assert retry.audit_entry.audit_id == first.audit_entry.audit_id
 
-    conflicting = replace_category_tags_action(["tokenized"], "nonce-replay")
+    conflicting = set_custom_field_action("isin", "tokenized", "nonce-replay")
     with pytest.raises(RegistryError) as exc_info:
         with session_factory() as session:
             submit_signed(session, conflicting)
@@ -200,15 +193,15 @@ def test_nonce_idempotency_and_conflict(session_factory, registered_asset) -> No
 def test_latest_action_hash_endpoint_and_prev_hash_validation(session_factory, registered_asset) -> None:
     with session_factory() as session:
         initial_latest = get_latest_action_hash(session, ASSET_ID)
-        response = submit_signed(session, replace_category_tags_action(["bond"], "nonce-chain"))
+        response = submit_signed(session, set_custom_field_action("isin", "bond", "nonce-chain"))
         advanced_latest = get_latest_action_hash(session, ASSET_ID)
 
     assert initial_latest.operation == "register"
     assert initial_latest.action_hash == response.audit_entry.action["prev_action_hash"]
     assert response.audit_entry.action_hash == advanced_latest.action_hash
-    assert advanced_latest.operation == "replace_category_tags"
+    assert advanced_latest.operation == "set_custom_field"
 
-    stale_action = replace_category_tags_action(["tokenized"], "nonce-chain-stale")
+    stale_action = set_custom_field_action("isin", "tokenized", "nonce-chain-stale")
     stale_action["prev_action_hash"] = initial_latest.action_hash
     with pytest.raises(RegistryError) as exc_info:
         with session_factory() as session:
@@ -221,7 +214,7 @@ def test_latest_action_hash_endpoint_and_prev_hash_validation(session_factory, r
 
 
 def test_rejects_non_canonical_payload_invalid_signature_and_stale_timestamp(session_factory, registered_asset) -> None:
-    action = replace_category_tags_action(["bond"], "nonce-bad")
+    action = set_custom_field_action("isin", "bond", "nonce-bad")
     non_canonical_payload = b'{"signing_context":"liquid-asset-registry-action-v1", "asset_id":"' + ASSET_ID.encode() + b'"}'
     with pytest.raises(RegistryError) as exc_info:
         with session_factory() as session:
@@ -234,7 +227,7 @@ def test_rejects_non_canonical_payload_invalid_signature_and_stale_timestamp(ses
             submit_issuer_action(session, asset_id=ASSET_ID, payload=payload_for(action), signature=sign_payload(action, NEW_PRIVATE_KEY), now=NOW)
     assert exc_info.value.error == "invalid_signature"
 
-    stale = replace_category_tags_action(["bond"], "nonce-stale", timestamp=NOW - timedelta(minutes=6))
+    stale = set_custom_field_action("isin", "bond", "nonce-stale", timestamp=NOW - timedelta(minutes=6))
     with pytest.raises(RegistryError) as exc_info:
         with session_factory() as session:
             submit_signed(session, stale)
@@ -243,9 +236,9 @@ def test_rejects_non_canonical_payload_invalid_signature_and_stale_timestamp(ses
 
 def test_rejects_timestamp_older_than_last_accepted_action(session_factory, registered_asset) -> None:
     with session_factory() as session:
-        submit_signed(session, replace_category_tags_action(["bond"], "nonce-newer", timestamp=NOW + timedelta(seconds=20)))
+        submit_signed(session, set_custom_field_action("isin", "bond", "nonce-newer", timestamp=NOW + timedelta(seconds=20)))
 
-    older = replace_category_tags_action(["tokenized"], "nonce-older", timestamp=NOW + timedelta(seconds=10))
+    older = set_custom_field_action("isin", "tokenized", "nonce-older", timestamp=NOW + timedelta(seconds=10))
     with pytest.raises(RegistryError) as exc_info:
         with session_factory() as session:
             submit_signed(session, older)
@@ -255,12 +248,6 @@ def test_rejects_timestamp_older_than_last_accepted_action(session_factory, regi
 
 def test_rejects_issuer_no_ops_before_action_insertion(session_factory, registered_asset) -> None:
     no_ops = [
-        replace_category_tags_action(["stablecoin"], "nonce-noop-tags"),
-        replace_trading_venues_action(
-            [{"venue": "sideswap", "url": "https://sideswap.io/assets/ACTION"}],
-            "nonce-noop-venues",
-            timestamp=NOW + timedelta(seconds=1),
-        ),
         replace_custom_action({"isin": "OLD"}, "nonce-noop-custom", timestamp=NOW + timedelta(seconds=2)),
         set_custom_field_action("isin", "OLD", "nonce-noop-set-custom", timestamp=NOW + timedelta(seconds=3)),
         delete_custom_field_action("missing", "nonce-noop-delete", timestamp=NOW + timedelta(seconds=4)),
@@ -286,8 +273,6 @@ def test_rejects_issuer_no_ops_before_action_insertion(session_factory, register
                 select count(*)
                 from actions
                 where nonce in (
-                  'nonce-noop-tags',
-                  'nonce-noop-venues',
                   'nonce-noop-custom',
                   'nonce-noop-set-custom',
                   'nonce-noop-delete',
@@ -330,19 +315,19 @@ def test_rotate_issuer_pubkey_closes_old_key_and_requires_new_key_for_future_act
     assert [entry.pubkey for entry in rotated.asset.issuer_pubkey_history] == [PUBKEY, NEW_PUBKEY]
     assert rotated.asset.issuer_pubkey_history[0].valid_until_audit_id == rotated.audit_entry.audit_id
 
-    old_key_action = replace_category_tags_action(["bond"], "nonce-old-key", timestamp=NOW + timedelta(seconds=1))
+    old_key_action = set_custom_field_action("isin", "bond", "nonce-old-key", timestamp=NOW + timedelta(seconds=1))
     with pytest.raises(RegistryError) as exc_info:
         with session_factory() as session:
             submit_signed(session, old_key_action, private_key=PRIVATE_KEY)
     assert exc_info.value.error == "invalid_signature"
 
-    new_key_action = replace_category_tags_action(["bond"], "nonce-new-key", timestamp=NOW + timedelta(seconds=1))
+    new_key_action = set_custom_field_action("isin", "bond", "nonce-new-key", timestamp=NOW + timedelta(seconds=1))
     with session_factory() as session:
         response = submit_signed(session, new_key_action, private_key=NEW_PRIVATE_KEY)
 
     assert response.status == "applied"
     assert response.audit_entry.verified_pubkey == NEW_PUBKEY
-    assert response.asset.mutable.category_tags == ["bond"]
+    assert response.asset.mutable.custom["isin"] == "bond"
 
 
 def test_rejects_old_path_based_actions(session_factory, registered_asset) -> None:
@@ -379,30 +364,6 @@ def add_prev_action_hash(session, action: dict) -> dict:
     if "prev_action_hash" not in action and action.get("operation") != "replace":
         action["prev_action_hash"] = get_latest_action_hash(session, ASSET_ID).action_hash
     return action
-
-
-def replace_category_tags_action(category_tags: list[str], nonce: str, *, timestamp: datetime = NOW) -> dict:
-    return {
-        "signing_context": "liquid-asset-registry-action-v1",
-        "asset_id": ASSET_ID,
-        "operation": "replace_category_tags",
-        "mutable_schema_version": 1,
-        "timestamp": iso(timestamp),
-        "nonce": nonce,
-        "category_tags": category_tags,
-    }
-
-
-def replace_trading_venues_action(trading_venues: list[dict], nonce: str, *, timestamp: datetime = NOW) -> dict:
-    return {
-        "signing_context": "liquid-asset-registry-action-v1",
-        "asset_id": ASSET_ID,
-        "operation": "replace_trading_venues",
-        "mutable_schema_version": 1,
-        "timestamp": iso(timestamp),
-        "nonce": nonce,
-        "trading_venues": trading_venues,
-    }
 
 
 def replace_custom_action(custom: dict, nonce: str, *, timestamp: datetime = NOW) -> dict:

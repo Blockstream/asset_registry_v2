@@ -38,11 +38,9 @@ from registry_api.models import (
     Action,
     Asset,
     AssetAdminAnnotation,
-    AssetCategoryTag,
     AssetCustomAttribute,
     AssetIconProposal,
     AssetMutableMetadata,
-    AssetTradingVenue,
     IssuerPubkeyHistory,
 )
 from registry_api.registration_command import command_from_v2_registration
@@ -55,7 +53,6 @@ from registry_api.schemas import (
     IssuerPubkeyHistoryEntry,
     MutableMetadata,
     RegisterAssetRequest,
-    TradingVenue,
 )
 from registry_api.serialized_fragments import (
     refresh_asset_serialized_fragments,
@@ -63,12 +60,9 @@ from registry_api.serialized_fragments import (
 )
 from registry_api.validation import (
     ASSET_TYPES,
-    available_trading_venues,
     normalize_asset_id,
     normalize_domain,
     require_case_insensitive_controlled_value,
-    require_category_tag,
-    require_trading_venue,
 )
 
 _SORT_COLUMNS: dict[str, tuple] = {
@@ -336,8 +330,6 @@ def search_v2_assets(
     ticker: str | None = None,
     name: str | None = None,
     asset_type: str | None = None,
-    category_tag: Sequence[str] | None = None,
-    trading_venue: str | None = None,
     created_after: datetime | None = None,
     updated_after: datetime | None = None,
     include_deregistered: bool = False,
@@ -361,8 +353,6 @@ def search_v2_assets(
         ticker=ticker,
         name=name,
         asset_type=asset_type,
-        category_tag=category_tag,
-        trading_venue=trading_venue,
         created_after=created_after,
         updated_after=updated_after,
         include_deregistered=include_deregistered,
@@ -429,16 +419,6 @@ def asset_response_from_row(db: Session, asset: Asset) -> AssetResponse:
         current_issuer_pubkey=asset.current_issuer_pubkey,
         issuer_pubkey_history=_issuer_history(db, asset),
         mutable=MutableMetadata(
-            trading_venues=[
-                TradingVenue(venue=row.name, url=row.url)
-                for row in sorted(
-                    asset.trading_venues, key=lambda venue: venue.position
-                )
-            ],
-            category_tags=[
-                row.tag
-                for row in sorted(asset.category_tags, key=lambda tag: tag.position)
-            ],
             custom={
                 row.name: row.value
                 for row in sorted(asset.custom_attributes, key=lambda attr: attr.name)
@@ -455,25 +435,6 @@ def asset_response_from_row(db: Session, asset: Asset) -> AssetResponse:
 def _insert_mutable_rows(
     db: Session, asset: Asset, mutable: MutableMetadata, action_uuid: Any
 ) -> None:
-    for position, venue in enumerate(mutable.trading_venues):
-        db.add(
-            AssetTradingVenue(
-                asset_uuid=asset.asset_uuid,
-                name=venue.venue,
-                url=venue.url,
-                position=position,
-                updated_by_action_uuid=action_uuid,
-            )
-        )
-    for position, tag in enumerate(mutable.category_tags):
-        db.add(
-            AssetCategoryTag(
-                asset_uuid=asset.asset_uuid,
-                tag=tag,
-                position=position,
-                updated_by_action_uuid=action_uuid,
-            )
-        )
     for key, value in mutable.custom.items():
         db.add(
             AssetCustomAttribute(
@@ -516,8 +477,6 @@ def _filtered_asset_query(
     ticker: str | None = None,
     name: str | None = None,
     asset_type: str | None = None,
-    category_tag: Sequence[str] | None = None,
-    trading_venue: str | None = None,
     created_after: datetime | None = None,
     updated_after: datetime | None = None,
     include_deregistered: bool = False,
@@ -564,34 +523,6 @@ def _filtered_asset_query(
         query = query.join(AssetAdminAnnotation).where(
             AssetAdminAnnotation.asset_type == normalized_asset_type
         )
-    if category_tag:
-        try:
-            tags = [require_category_tag(tag) for tag in category_tag]
-        except ValueError as exc:
-            raise RegistryError(ErrorCode.VALIDATION_ERROR, str(exc)) from exc
-        query = query.where(
-            Asset.asset_uuid.in_(
-                select(AssetCategoryTag.asset_uuid).where(
-                    AssetCategoryTag.tag.in_(tags)
-                )
-            )
-        )
-    if trading_venue is not None:
-        try:
-            venue = require_trading_venue(trading_venue)
-        except ValueError as exc:
-            raise RegistryError(
-                ErrorCode.VALIDATION_ERROR,
-                "unsupported trading venue",
-                {"available_trading_venues": available_trading_venues()},
-            ) from exc
-        query = query.where(
-            Asset.asset_uuid.in_(
-                select(AssetTradingVenue.asset_uuid).where(
-                    AssetTradingVenue.name == venue
-                )
-            )
-        )
     if created_after is not None:
         query = query.where(Asset.created_at > created_after)
     if updated_after is not None:
@@ -601,8 +532,6 @@ def _filtered_asset_query(
 
 def _with_asset_children(query: Select[tuple[Asset]]) -> Select[tuple[Asset]]:
     return query.options(
-        selectinload(Asset.trading_venues),
-        selectinload(Asset.category_tags),
         selectinload(Asset.custom_attributes),
         selectinload(Asset.admin_annotations),
         selectinload(
@@ -717,16 +646,6 @@ def _asset_response_payload(
         "current_issuer_pubkey": asset.current_issuer_pubkey,
         "issuer_pubkey_history": issuer_pubkey_history,
         "mutable": {
-            "trading_venues": [
-                {"venue": row.name, "url": row.url}
-                for row in sorted(
-                    asset.trading_venues, key=lambda venue: venue.position
-                )
-            ],
-            "category_tags": [
-                row.tag
-                for row in sorted(asset.category_tags, key=lambda tag: tag.position)
-            ],
             "custom": {
                 row.name: row.value
                 for row in sorted(asset.custom_attributes, key=lambda attr: attr.name)

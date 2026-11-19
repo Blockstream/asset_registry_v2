@@ -25,8 +25,7 @@ const page = await registry.v2.search({
   page: 1,
   pageSize: 50,
   sort: "updated_at_desc",
-  categoryTags: ["stablecoin", "tokenized"],
-  tradingVenue: "bitfinex",
+  assetType: "stablecoin",
 });
 
 console.log(page.items, page.total_count, page.total_pages);
@@ -94,10 +93,7 @@ const issuerRegistry = new AssetRegistryClient({
   issuerPrivateKey,
 });
 
-await issuerRegistry.v2.replaceCategoryTags(assetId, ["stablecoin"]);
-await issuerRegistry.v2.replaceTradingVenues(assetId, [
-  { venue: "bitfinex", url: "https://example.com/market" },
-]);
+await issuerRegistry.v2.replaceCustom(assetId, { issuer_note: "Series A" });
 await issuerRegistry.v2.setCustomField(assetId, "isin", "US0000000000");
 await issuerRegistry.v2.deleteCustomField(assetId, "isin");
 await issuerRegistry.v2.rotateIssuerKey(assetId, newIssuerPubkey);

@@ -20,7 +20,7 @@ from registry_api.domain_verification import (
     normalized_contract_signature_payload,
 )
 from registry_api.errors import RegistryError
-from registry_api.models import Action, Asset, AssetCategoryTag
+from registry_api.models import Action, Asset, AssetCustomAttribute
 from registry_api.schemas import RegisterAssetRequest
 from registry_api.serialized_fragments import refresh_asset_serialized_fragments
 from registry_api.signatures import _bitcoin_signed_message_hash
@@ -61,8 +61,6 @@ def cleanup_database(engine) -> None:
         connection.execute(text("delete from issuer_pubkey_history"))
         connection.execute(text("delete from asset_admin_annotations"))
         connection.execute(text("delete from asset_custom_attributes"))
-        connection.execute(text("delete from asset_category_tags"))
-        connection.execute(text("delete from asset_trading_venues"))
         connection.execute(text("delete from asset_mutable_metadata"))
         connection.execute(text("delete from actions"))
         connection.execute(text("delete from assets"))
@@ -75,8 +73,6 @@ def v2_request(
     domain: str = "proof.example.com",
     ticker: str = "V2ASSET",
     name: str = "V2 Asset",
-    categories: list[str] | None = None,
-    venues: list[dict[str, str]] | None = None,
     domain_verification_method: str = "http",
 ) -> RegisterAssetRequest:
     return RegisterAssetRequest.model_validate(
@@ -92,8 +88,6 @@ def v2_request(
             },
             "domain_verification_method": domain_verification_method,
             "mutable": {
-                "category_tags": categories or ["stablecoin"],
-                "trading_venues": venues or [{"venue": "sideswap", "url": "https://sideswap.io/assets/V2ASSET"}],
                 "custom": {"issuer_reference": "abc-123", "rank": 7},
             },
         }
@@ -107,9 +101,7 @@ def test_v2_registration_persists_normalized_metadata_and_returns_asset(session_
     assert response.asset_id == ASSET_ID
     assert response.contract.initial_issuer_pubkey == PUBKEY
     assert response.initial_issuer_pubkey_source == "contract"
-    assert response.mutable.category_tags == ["stablecoin"]
-    assert response.mutable.trading_venues[0].venue == "sideswap"
-    assert response.mutable.custom == {"issuer_reference": "abc-123", "rank": 7}
+    assert response.mutable.model_dump() == {"custom": {"issuer_reference": "abc-123", "rank": 7}}
     assert response.icon is None
     assert response.issuer_pubkey_history[0].valid_from_audit_id >= 1
 
@@ -117,11 +109,9 @@ def test_v2_registration_persists_normalized_metadata_and_returns_asset(session_
         row = session.execute(
             text(
                 """
-                select a.asset_id, act.operation, tv.name as venue, ct.tag
+                select a.asset_id, act.operation, act.action -> 'mutable' as mutable
                 from assets a
                 join actions act on act.asset_uuid = a.asset_uuid
-                join asset_trading_venues tv on tv.asset_uuid = a.asset_uuid
-                join asset_category_tags ct on ct.asset_uuid = a.asset_uuid
                 where a.asset_id = :asset_id
                 """
             ),
@@ -129,8 +119,7 @@ def test_v2_registration_persists_normalized_metadata_and_returns_asset(session_
         ).mappings().one()
 
     assert row["operation"] == "register"
-    assert row["venue"] == "sideswap"
-    assert row["tag"] == "stablecoin"
+    assert row["mutable"] == {"custom": {"issuer_reference": "abc-123", "rank": 7}}
 
 
 def test_v2_registration_preserves_contract_hash_in_all_responses(session_factory) -> None:
@@ -158,6 +147,7 @@ def test_v2_registration_preserves_contract_hash_in_all_responses(session_factor
     ):
         assert payload["contract"] == expected_contract
         assert contract_hash(payload["contract"]) == expected_hash
+        assert list(payload["mutable"]) == ["custom"]
 
 
 def test_v2_all_json_uses_cached_serialized_fragments(session_factory) -> None:
@@ -187,15 +177,15 @@ def test_v2_all_json_uses_cached_serialized_fragments(session_factory) -> None:
 
 def test_refresh_serialized_fragments_expires_loaded_relationships(session_factory) -> None:
     with session_factory() as session:
-        register_v2_asset(session, v2_request(categories=["stablecoin"]))
+        register_v2_asset(session, v2_request())
 
     with session_factory() as session:
         asset = session.query(Asset).filter_by(asset_id=ASSET_ID).one()
-        assert [row.tag for row in asset.category_tags] == ["stablecoin"]
+        assert {row.name for row in asset.custom_attributes} == {"issuer_reference", "rank"}
 
         asset.updated_at = datetime.now(UTC)
-        session.execute(delete(AssetCategoryTag).where(AssetCategoryTag.asset_uuid == asset.asset_uuid))
-        session.add(AssetCategoryTag(asset_uuid=asset.asset_uuid, tag="bond", position=0))
+        session.execute(delete(AssetCustomAttribute).where(AssetCustomAttribute.asset_uuid == asset.asset_uuid))
+        session.add(AssetCustomAttribute(asset_uuid=asset.asset_uuid, name="series", value="B"))
         session.flush()
         refresh_asset_serialized_fragments(session, asset)
         session.commit()
@@ -203,7 +193,7 @@ def test_refresh_serialized_fragments_expires_loaded_relationships(session_facto
     with session_factory() as session:
         payload = json.loads(all_v2_assets_json_bytes(session))
 
-    assert payload[ASSET_ID]["mutable"]["category_tags"] == ["bond"]
+    assert payload[ASSET_ID]["mutable"] == {"custom": {"series": "B"}}
 
 
 def test_v2_registration_rejects_duplicate_active_asset(session_factory) -> None:
@@ -338,8 +328,6 @@ def test_v2_lookup_search_filters_pagination_and_all_json(session_factory) -> No
                 domain="issuer.example.com",
                 ticker="BONDY",
                 name="Bond Asset",
-                categories=["bond", "tokenized"],
-                venues=[{"venue": "bitfinex", "url": "https://bitfinex.com/t/BONDY"}],
             ),
         )
     with session_factory() as session:
@@ -354,7 +342,7 @@ def test_v2_lookup_search_filters_pagination_and_all_json(session_factory) -> No
         found = get_v2_asset(session, ASSET_ID)
         second = get_v2_asset(session, ASSET_ID_2)
         asset_id_filtered = search_v2_assets(session, asset_id=ASSET_ID_2[:12])
-        filtered = search_v2_assets(session, category_tag=["bond"], trading_venue="bitfinex")
+        filtered = search_v2_assets(session, domain="issuer.example.com")
         first_page = search_v2_assets(session, page=1, page_size=1, sort="ticker_asc")
         all_assets_json = json.loads(all_v2_assets_json_bytes(session))
 
@@ -495,8 +483,6 @@ def test_v2_search_filters_are_case_insensitive(session_factory) -> None:
             search_v2_assets(session, name="satoshi"),
             search_v2_assets(session, name="SaToShI"),
             search_v2_assets(session, asset_type="amp_ASSET"),
-            search_v2_assets(session, category_tag=["STABLECOIN"]),
-            search_v2_assets(session, trading_venue="SIDESWAP"),
         ]
 
     for result in results:

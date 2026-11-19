@@ -1152,10 +1152,6 @@ export interface components {
         };
         /** MutableMetadata */
         "MutableMetadata-Input": {
-            /** Trading Venues */
-            trading_venues?: components["schemas"]["TradingVenue"][];
-            /** Category Tags */
-            category_tags?: ("stablecoin" | "bond" | "fixed-income" | "tokenized")[];
             /** Custom */
             custom?: {
                 [key: string]: components["schemas"]["LegacyExtraValue-Input"];
@@ -1163,10 +1159,6 @@ export interface components {
         };
         /** MutableMetadata */
         "MutableMetadata-Output": {
-            /** Trading Venues */
-            trading_venues?: components["schemas"]["TradingVenue"][];
-            /** Category Tags */
-            category_tags?: ("stablecoin" | "bond" | "fixed-income" | "tokenized")[];
             /** Custom */
             custom?: {
                 [key: string]: components["schemas"]["LegacyExtraValue-Output"];
@@ -1328,34 +1320,6 @@ export interface components {
             /** Admin Pubkey */
             admin_pubkey: string;
         };
-        /** ReplaceCategoryTagsAction */
-        ReplaceCategoryTagsAction: {
-            /**
-             * Signing Context
-             * @constant
-             */
-            signing_context: "liquid-asset-registry-action-v1";
-            /** Asset Id */
-            asset_id: string;
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            operation: "replace_category_tags";
-            /** Prev Action Hash */
-            prev_action_hash: string;
-            /**
-             * Timestamp
-             * Format: date-time
-             */
-            timestamp: string;
-            /** Nonce */
-            nonce: string;
-            /** Mutable Schema Version */
-            mutable_schema_version: number;
-            /** Category Tags */
-            category_tags: ("stablecoin" | "bond" | "fixed-income" | "tokenized")[];
-        };
         /** ReplaceCustomAction */
         ReplaceCustomAction: {
             /**
@@ -1385,34 +1349,6 @@ export interface components {
             custom?: {
                 [key: string]: components["schemas"]["LegacyExtraValue-Input"];
             };
-        };
-        /** ReplaceTradingVenuesAction */
-        ReplaceTradingVenuesAction: {
-            /**
-             * Signing Context
-             * @constant
-             */
-            signing_context: "liquid-asset-registry-action-v1";
-            /** Asset Id */
-            asset_id: string;
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            operation: "replace_trading_venues";
-            /** Prev Action Hash */
-            prev_action_hash: string;
-            /**
-             * Timestamp
-             * Format: date-time
-             */
-            timestamp: string;
-            /** Nonce */
-            nonce: string;
-            /** Mutable Schema Version */
-            mutable_schema_version: number;
-            /** Trading Venues */
-            trading_venues: components["schemas"]["TradingVenue"][];
         };
         /** RotateIssuerPubkeyAction */
         RotateIssuerPubkeyAction: {
@@ -1496,19 +1432,6 @@ export interface components {
             asset_id: string;
             /** Icon Hash */
             icon_hash: string;
-        };
-        /** TradingVenue */
-        TradingVenue: {
-            /**
-             * Venue
-             * @enum {string}
-             */
-            venue: "sideswap" | "bitfinex";
-            /**
-             * Url
-             * Format: uri
-             */
-            url: string;
         };
         /** UpdateAdminAnnotationsAction */
         UpdateAdminAnnotationsAction: {
@@ -2402,10 +2325,6 @@ export interface operations {
                 name?: string;
                 /** @description Case-insensitive exact asset type match. */
                 asset_type?: "AMP_asset" | "stablecoin" | "security_token" | "other";
-                /** @description Case-insensitive category tag filter. Multiple values match assets with any of the supplied tags. */
-                category_tag?: ("stablecoin" | "bond" | "fixed-income" | "tokenized")[];
-                /** @description Case-insensitive exact trading venue match. */
-                trading_venue?: "sideswap" | "bitfinex";
                 /** @description Return assets created strictly after this timestamp. */
                 created_after?: string;
                 /** @description Return assets updated strictly after this timestamp. */
@@ -3276,7 +3195,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ReplaceCategoryTagsAction"] | components["schemas"]["ReplaceTradingVenuesAction"] | components["schemas"]["ReplaceCustomAction"] | components["schemas"]["SetCustomFieldAction"] | components["schemas"]["DeleteCustomFieldAction"] | components["schemas"]["DeregisterAction"] | components["schemas"]["RotateIssuerPubkeyAction"];
+                "application/json": components["schemas"]["ReplaceCustomAction"] | components["schemas"]["SetCustomFieldAction"] | components["schemas"]["DeleteCustomFieldAction"] | components["schemas"]["DeregisterAction"] | components["schemas"]["RotateIssuerPubkeyAction"];
             };
         };
         responses: {

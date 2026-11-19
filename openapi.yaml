@@ -876,32 +876,6 @@ paths:
           - other
           type: string
         description: Case-insensitive exact asset type match.
-      - name: category_tag
-        in: query
-        required: false
-        schema:
-          description: Case-insensitive category tag filter. Multiple values match assets with any of the supplied tags.
-          title: Category Tag
-          type: array
-          items:
-            enum:
-            - stablecoin
-            - bond
-            - fixed-income
-            - tokenized
-            type: string
-        description: Case-insensitive category tag filter. Multiple values match assets with any of the supplied tags.
-      - name: trading_venue
-        in: query
-        required: false
-        schema:
-          description: Case-insensitive exact trading venue match.
-          title: Trading Venue
-          enum:
-          - sideswap
-          - bitfinex
-          type: string
-        description: Case-insensitive exact trading venue match.
       - name: created_after
         in: query
         required: false
@@ -1705,8 +1679,6 @@ paths:
           application/json:
             schema:
               oneOf:
-              - $ref: '#/components/schemas/ReplaceCategoryTagsAction'
-              - $ref: '#/components/schemas/ReplaceTradingVenuesAction'
               - $ref: '#/components/schemas/ReplaceCustomAction'
               - $ref: '#/components/schemas/SetCustomFieldAction'
               - $ref: '#/components/schemas/DeleteCustomFieldAction'
@@ -1715,8 +1687,6 @@ paths:
               discriminator:
                 propertyName: operation
                 mapping:
-                  replace_category_tags: '#/components/schemas/ReplaceCategoryTagsAction'
-                  replace_trading_venues: '#/components/schemas/ReplaceTradingVenuesAction'
                   replace_custom: '#/components/schemas/ReplaceCustomAction'
                   set_custom_field: '#/components/schemas/SetCustomFieldAction'
                   delete_custom_field: '#/components/schemas/DeleteCustomFieldAction'
@@ -1724,34 +1694,6 @@ paths:
                   rotate_issuer_pubkey: '#/components/schemas/RotateIssuerPubkeyAction'
               title: ' Action'
             examples:
-              replaceCategoryTags:
-                summary: Replace category tags
-                value:
-                  asset_id: aa909f1b00000000000000000000000000000000000000000000000000000000
-                  category_tags:
-                  - stablecoin
-                  - tokenized
-                  mutable_schema_version: 1
-                  nonce: 9b2b0b3f-8f2e-4f3d-a979-1f2e8a947f87e
-                  operation: replace_category_tags
-                  prev_action_hash: b4b6f20000000000000000000000000000000000000000000000000000000000
-                  signing_context: liquid-asset-registry-action-v1
-                  timestamp: '2026-04-27T15:30:00.123Z'
-              replaceTradingVenues:
-                summary: Replace trading venues using controlled venue identifiers
-                value:
-                  asset_id: aa909f1b00000000000000000000000000000000000000000000000000000000
-                  mutable_schema_version: 1
-                  nonce: 2099dc1c-e751-4b5e-b570-bb71500a36d0
-                  operation: replace_trading_venues
-                  prev_action_hash: b4b6f20000000000000000000000000000000000000000000000000000000000
-                  signing_context: liquid-asset-registry-action-v1
-                  timestamp: '2026-04-27T15:30:30.123Z'
-                  trading_venues:
-                  - venue: sideswap
-                    url: https://api.sideswap.io/assets/ABT
-                  - venue: bitfinex
-                    url: https://trading.bitfinex.com/t/ABT:USD
               replaceCustom:
                 summary: Replace the full custom metadata object
                 value:
@@ -4228,22 +4170,6 @@ components:
       title: MigrateAssetAction
     MutableMetadata-Input:
       properties:
-        trading_venues:
-          items:
-            $ref: '#/components/schemas/TradingVenue'
-          type: array
-          title: Trading Venues
-        category_tags:
-          items:
-            type: string
-            enum:
-            - stablecoin
-            - bond
-            - fixed-income
-            - tokenized
-          type: array
-          uniqueItems: true
-          title: Category Tags
         custom:
           patternProperties:
             ^[^/\x00]+$:
@@ -4259,22 +4185,6 @@ components:
       title: MutableMetadata
     MutableMetadata-Output:
       properties:
-        trading_venues:
-          items:
-            $ref: '#/components/schemas/TradingVenue'
-          type: array
-          title: Trading Venues
-        category_tags:
-          items:
-            type: string
-            enum:
-            - stablecoin
-            - bond
-            - fixed-income
-            - tokenized
-          type: array
-          uniqueItems: true
-          title: Category Tags
         custom:
           patternProperties:
             ^[^/\x00]+$:
@@ -4570,64 +4480,6 @@ components:
       - nonce
       - admin_pubkey
       title: RemoveAdminAction
-    ReplaceCategoryTagsAction:
-      properties:
-        signing_context:
-          type: string
-          const: liquid-asset-registry-action-v1
-          title: Signing Context
-        asset_id:
-          type: string
-          maxLength: 64
-          minLength: 64
-          pattern: ^[0-9a-fA-F]{64}$
-          title: Asset Id
-        operation:
-          type: string
-          const: replace_category_tags
-          title: Operation
-        prev_action_hash:
-          type: string
-          maxLength: 64
-          minLength: 64
-          pattern: ^[0-9a-fA-F]{64}$
-          title: Prev Action Hash
-        timestamp:
-          type: string
-          format: date-time
-          title: Timestamp
-        nonce:
-          type: string
-          maxLength: 128
-          minLength: 8
-          title: Nonce
-        mutable_schema_version:
-          type: integer
-          minimum: 1.0
-          title: Mutable Schema Version
-        category_tags:
-          items:
-            type: string
-            enum:
-            - stablecoin
-            - bond
-            - fixed-income
-            - tokenized
-          type: array
-          uniqueItems: true
-          title: Category Tags
-      additionalProperties: false
-      type: object
-      required:
-      - signing_context
-      - asset_id
-      - operation
-      - prev_action_hash
-      - timestamp
-      - nonce
-      - mutable_schema_version
-      - category_tags
-      title: ReplaceCategoryTagsAction
     ReplaceCustomAction:
       properties:
         signing_context:
@@ -4684,58 +4536,6 @@ components:
       - nonce
       - mutable_schema_version
       title: ReplaceCustomAction
-    ReplaceTradingVenuesAction:
-      properties:
-        signing_context:
-          type: string
-          const: liquid-asset-registry-action-v1
-          title: Signing Context
-        asset_id:
-          type: string
-          maxLength: 64
-          minLength: 64
-          pattern: ^[0-9a-fA-F]{64}$
-          title: Asset Id
-        operation:
-          type: string
-          const: replace_trading_venues
-          title: Operation
-        prev_action_hash:
-          type: string
-          maxLength: 64
-          minLength: 64
-          pattern: ^[0-9a-fA-F]{64}$
-          title: Prev Action Hash
-        timestamp:
-          type: string
-          format: date-time
-          title: Timestamp
-        nonce:
-          type: string
-          maxLength: 128
-          minLength: 8
-          title: Nonce
-        mutable_schema_version:
-          type: integer
-          minimum: 1.0
-          title: Mutable Schema Version
-        trading_venues:
-          items:
-            $ref: '#/components/schemas/TradingVenue'
-          type: array
-          title: Trading Venues
-      additionalProperties: false
-      type: object
-      required:
-      - signing_context
-      - asset_id
-      - operation
-      - prev_action_hash
-      - timestamp
-      - nonce
-      - mutable_schema_version
-      - trading_venues
-      title: ReplaceTradingVenuesAction
     RotateIssuerPubkeyAction:
       properties:
         signing_context:
@@ -4893,26 +4693,6 @@ components:
       - asset_id
       - icon_hash
       title: SetIconAction
-    TradingVenue:
-      properties:
-        venue:
-          type: string
-          enum:
-          - sideswap
-          - bitfinex
-          title: Venue
-        url:
-          type: string
-          maxLength: 2048
-          pattern: ^[hH][tT][tT][pP][sS]?://[^\s]+$
-          format: uri
-          title: Url
-      additionalProperties: false
-      type: object
-      required:
-      - venue
-      - url
-      title: TradingVenue
     UpdateAdminAnnotationsAction:
       properties:
         signing_context:

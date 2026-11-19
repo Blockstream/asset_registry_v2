@@ -9,7 +9,7 @@ The main shape is action-centered. Accepted issuer, admin, and system actions ar
 - Use UUID primary keys for application identity.
 - Treat `asset_id` as a semantic blockchain identifier, not as the table primary key.
 - Store canonical contract metadata only when needed in append-only action payloads; reconstruct current base contract from projected asset columns for infrequent response needs.
-- Normalize issuer mutable metadata that needs search: trading venues, category tags, and custom attributes.
+- Normalize issuer mutable metadata by key: custom attributes.
 - Store every accepted action in one append-only table so audit history, idempotency, and "last changed by" references all point to the same source.
 - Keep controlled string validation in service-layer enums and validators unless there is a later operational need to manage those values in the database.
 - Default `domain_verification_method` to `http`.
@@ -133,58 +133,25 @@ check (schema_version >= 1)
 create index asset_mutable_metadata_action_idx on asset_mutable_metadata (updated_by_action_uuid);
 ```
 
-### `asset_trading_venues`
+### Retired issuer category tags and trading venues
 
-Current `mutable.trading_venues`, stored without redundant JSON in `asset_mutable_metadata`.
-
-| Column | Type | Constraints / Notes |
-| --- | --- | --- |
-| `trading_venue_uuid` | `uuid` | Primary key, default `gen_random_uuid()`. |
-| `asset_uuid` | `uuid` | Required foreign key to `assets.asset_uuid`. |
-| `name` | `text` | Required venue identifier, e.g. `sideswap`, `bitfinex`. |
-| `url` | `text` | Required normalized URI. |
-| `position` | `integer` | Required, preserves response array order. |
-| `created_at` | `timestamptz` | Required. |
-| `updated_at` | `timestamptz` | Required. |
-| `updated_by_action_uuid` | `uuid` | Nullable foreign key to `actions.action_uuid`. |
-
-Recommended constraints and indexes:
-
-```sql
-unique (asset_uuid, url)
-unique (asset_uuid, name, url)
-create index asset_trading_venues_name_idx on asset_trading_venues (name, asset_uuid);
-create index asset_trading_venues_asset_position_idx on asset_trading_venues (asset_uuid, position);
-```
-
-The API field is still returned as:
+Revision `0018_retire_issuer_metadata` removed `mutable.category_tags`, `mutable.trading_venues`, and their `asset_category_tags` and `asset_trading_venues` tables. For each asset UUID that had rows in either table, including deregistered records, the migration recorded one unsigned `system` action with operation `retire_issuer_metadata_fields`:
 
 ```json
-{"venue":"sideswap","url":"https://api.sideswap.io/assets/ABT"}
+{
+  "operation": "retire_issuer_metadata_fields",
+  "asset_id": "<asset id>",
+  "migration_revision": "0018_retire_issuer_metadata",
+  "reason": "Issuer-managed category tags and trading venues were retired; stored values were cleared.",
+  "cleared_fields": ["category_tags", "trading_venues"],
+  "previous_values": {
+    "category_tags": ["stablecoin"],
+    "trading_venues": [{"venue": "sideswap", "url": "https://sideswap.io/assets/ABT"}]
+  }
+}
 ```
 
-The table column is named `name` because that is the requested database shape; application serialization maps `name` to API `venue`.
-
-### `asset_category_tags`
-
-Current `mutable.category_tags`, normalized for direct indexing and search.
-
-| Column | Type | Constraints / Notes |
-| --- | --- | --- |
-| `category_tag_uuid` | `uuid` | Primary key, default `gen_random_uuid()`. |
-| `asset_uuid` | `uuid` | Required foreign key to `assets.asset_uuid`. |
-| `tag` | `text` | Required category tag. |
-| `position` | `integer` | Required, preserves response array order. |
-| `created_at` | `timestamptz` | Required. |
-| `updated_by_action_uuid` | `uuid` | Nullable foreign key to `actions.action_uuid`. |
-
-Recommended constraints and indexes:
-
-```sql
-unique (asset_uuid, tag)
-create index asset_category_tags_tag_idx on asset_category_tags (tag, asset_uuid);
-create index asset_category_tags_asset_position_idx on asset_category_tags (asset_uuid, position);
-```
+The action has a null `action_hash`, so it does not advance the issuer hash chain. Historical `register`, `replace_category_tags`, and `replace_trading_venues` actions, their signatures, and legacy contract extras are unchanged. Admin-managed replacements will start with empty values.
 
 ### `asset_custom_attributes`
 
@@ -352,7 +319,7 @@ In one transaction:
 1. Verify chain commitment, contract hash, and domain proof.
 2. Insert into `assets`.
 3. Insert default row into `asset_mutable_metadata`.
-4. Insert provided mutable metadata into `asset_trading_venues`, `asset_category_tags`, and `asset_custom_attributes`.
+4. Insert provided mutable metadata into `asset_custom_attributes`.
 5. Insert default row into `asset_admin_annotations`.
 6. Insert a registration row into `actions` with actor `system` or `issuer`, depending on how registration is authenticated.
 7. Insert initial row into `issuer_pubkey_history`, referencing the registration action.
@@ -371,8 +338,6 @@ In one transaction:
 5. Check timestamp freshness against the latest accepted issuer action projection.
 6. Insert into `actions`; on `(asset_uuid, nonce)` conflict, apply idempotency logic.
 7. Apply operation-specific state changes:
-   - `replace /mutable/category_tags`: replace rows in `asset_category_tags`.
-   - `replace /mutable/trading_venues`: replace rows in `asset_trading_venues`.
    - `replace /mutable/custom/{key}`: upsert one row in `asset_custom_attributes`.
    - `delete /mutable/custom/{key}`: delete one row from `asset_custom_attributes`.
    - `deregister`: set `assets.status = 'deregistered'`.
@@ -387,7 +352,7 @@ In one transaction:
 `AssetResponse` is assembled from:
 
 - `assets` for identity, reconstructable contract fields, issuer keys, status, and timestamps.
-- `asset_trading_venues`, `asset_category_tags`, and `asset_custom_attributes` for `mutable`.
+- `asset_custom_attributes` for `mutable`.
 - `asset_admin_annotations` plus `actions` for `admin.last_admin_action`.
 - `issuer_pubkey_history` joined to `actions` for audit sequence values.
 

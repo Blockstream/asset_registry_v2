@@ -344,7 +344,7 @@ def test_register_asset_request_rejects_v2_key_only_in_registration_body() -> No
     assert exc_info.value.errors()[0]["loc"] == ("contract", "initial_issuer_pubkey")
 
 
-def test_register_asset_request_rejects_bad_domain_and_duplicate_tags() -> None:
+def test_register_asset_request_rejects_bad_domain() -> None:
     with pytest.raises(ValidationError):
         RegisterAssetRequest.model_validate(
             {
@@ -357,12 +357,20 @@ def test_register_asset_request_rejects_bad_domain_and_duplicate_tags() -> None:
                     "ticker": "EXAMPLE",
                     "version": 2,
                 },
-                "mutable": {"category_tags": ["stablecoin", "stablecoin"]},
             }
         )
 
 
-def test_register_asset_request_rejects_bad_trading_venue_with_available_values() -> None:
+@pytest.mark.parametrize(
+    "mutable",
+    [
+        {"category_tags": []},
+        {"category_tags": ["stablecoin"]},
+        {"trading_venues": []},
+        {"trading_venues": [{"venue": "sideswap", "url": "https://sideswap.io"}]},
+    ],
+)
+def test_register_asset_request_rejects_retired_mutable_fields(mutable) -> None:
     with pytest.raises(ValidationError) as exc_info:
         RegisterAssetRequest.model_validate(
             {
@@ -375,18 +383,17 @@ def test_register_asset_request_rejects_bad_trading_venue_with_available_values(
                     "ticker": "EXAMPLE",
                     "version": 2,
                 },
-                "mutable": {
-                    "trading_venues": [{"venue": "unknown", "url": "https://example.com"}],
-                },
+                "mutable": {**mutable, "custom": {"category_tags": ["kept"]}},
             }
         )
 
     error = exc_info.value.errors()[0]
-    assert error["type"] == "unsupported_trading_venue"
-    assert error["ctx"] == {"available_trading_venues": ["bitfinex", "sideswap"]}
+    assert error["type"] == "extra_forbidden"
+    assert error["loc"] == ("mutable", next(iter(mutable)))
 
 
-def test_register_asset_request_normalizes_category_tags_and_trading_venues() -> None:
+def test_register_asset_request_keeps_custom_keys_named_like_retired_fields() -> None:
+    custom = {"category_tags": ["bond"], "trading_venues": [{"venue": "x"}]}
     request = RegisterAssetRequest.model_validate(
         {
             "asset_id": ASSET_ID,
@@ -398,34 +405,40 @@ def test_register_asset_request_normalizes_category_tags_and_trading_venues() ->
                 "ticker": "EXAMPLE",
                 "version": 2,
             },
-            "mutable": {
-                "category_tags": ["Bond", "TOKENIZED"],
-                "trading_venues": [{"venue": "BITFINEX", "url": "HTTPS://BITFINEX.COM/t/EXAMPLE"}],
-            },
+            "mutable": {"custom": custom},
         }
     )
 
-    assert request.mutable.category_tags == ["bond", "tokenized"]
-    assert request.mutable.trading_venues[0].venue == "bitfinex"
-    assert request.mutable.trading_venues[0].url == "https://bitfinex.com/t/EXAMPLE"
+    assert request.mutable.model_dump() == {"custom": custom}
 
 
-def test_register_asset_request_rejects_case_insensitive_duplicate_category_tags() -> None:
-    with pytest.raises(ValidationError, match="category_tags must be unique"):
-        RegisterAssetRequest.model_validate(
+@pytest.mark.parametrize(
+    "operation,field,value",
+    [
+        ("replace_category_tags", "category_tags", ["stablecoin"]),
+        (
+            "replace_trading_venues",
+            "trading_venues",
+            [{"venue": "sideswap", "url": "https://sideswap.io"}],
+        ),
+    ],
+)
+def test_issuer_action_rejects_retired_operations(operation, field, value) -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        ISSUER_ACTION_ADAPTER.validate_python(
             {
+                "signing_context": "liquid-asset-registry-action-v1",
                 "asset_id": ASSET_ID,
-                "contract": {
-                    "entity": {"domain": "proof.example.com"},
-                    "initial_issuer_pubkey": PUBKEY,
-                    "name": "Example Asset",
-                    "precision": 0,
-                    "ticker": "EXAMPLE",
-                    "version": 2,
-                },
-                "mutable": {"category_tags": ["Bond", "bond"]},
+                "operation": operation,
+                "prev_action_hash": ACTION_HASH,
+                "mutable_schema_version": 1,
+                "timestamp": datetime.now(UTC),
+                "nonce": "nonce-retired",
+                field: value,
             }
         )
+
+    assert exc_info.value.errors()[0]["type"] == "union_tag_invalid"
 
 
 def test_register_asset_request_rejects_nested_custom_key() -> None:
@@ -554,10 +567,7 @@ def test_asset_response_validates_controlled_fields() -> None:
             "initial_issuer_pubkey": PUBKEY,
             "initial_issuer_pubkey_source": "contract",
             "current_issuer_pubkey": PUBKEY,
-            "mutable": {
-                "trading_venues": [{"venue": "sideswap", "url": "HTTPS://SIDESWAP.IO/assets/EXAMPLE"}],
-                "category_tags": ["stablecoin"],
-            },
+            "mutable": {"custom": {"isin": "US0000000000"}},
             "admin": {"asset_type": "stablecoin"},
             "icon": None,
             "status": "active",
@@ -566,7 +576,7 @@ def test_asset_response_validates_controlled_fields() -> None:
         }
     )
 
-    assert response.mutable.trading_venues[0].url == "https://sideswap.io/assets/EXAMPLE"
+    assert response.mutable.model_dump() == {"custom": {"isin": "US0000000000"}}
 
 
 def test_issuer_action_rejects_old_path_based_payload() -> None:

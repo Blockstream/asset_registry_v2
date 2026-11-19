@@ -189,8 +189,6 @@ def _fresh_asset_by_uuid(db: Session, asset_uuid: Any) -> Asset:
 
 def _asset_load_options() -> tuple[Any, ...]:
     return (
-        selectinload(Asset.trading_venues),
-        selectinload(Asset.category_tags),
         selectinload(Asset.custom_attributes),
         selectinload(Asset.admin_annotations),
         selectinload(

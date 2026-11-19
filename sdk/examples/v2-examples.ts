@@ -92,21 +92,10 @@ printResponse("Latest issuer action hash used to chain the next action:", latest
 const searchAfterRegistration = await client.v2.search({ name: "unspent", pageSize: 25 });
 printResponse("Search results after registration:", summarizeSearch(searchAfterRegistration));
 
-const tradingVenueResponse = await client.v2.replaceTradingVenues(ASSET_ID, [
-  {
-    venue: "sideswap",
-    url: "https://coinbase.com",
-  },
-]);
+const customFieldResponse = await client.v2.setCustomField(ASSET_ID, "isin", "US0000000001");
 printResponse(
-  "Trading venues after replacement:",
-  summarizeAction(tradingVenueResponse, ({ mutable }) => ({ trading_venues: mutable.trading_venues }))
-);
-
-const categoryTagResponse = await client.v2.replaceCategoryTags(ASSET_ID, ["bond"]);
-printResponse(
-  "Category tags after replacement:",
-  summarizeAction(categoryTagResponse, ({ mutable }) => ({ category_tags: mutable.category_tags }))
+  "Custom metadata after update:",
+  summarizeAction(customFieldResponse, ({ mutable }) => ({ custom: mutable.custom }))
 );
 
 const deregistrationResponse = await client.v2.deregisterAsset(ASSET_ID);

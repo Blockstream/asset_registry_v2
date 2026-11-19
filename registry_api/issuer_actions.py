@@ -13,10 +13,8 @@ from registry_api.errors import ErrorCode, RegistryError, clean_pydantic_errors
 from registry_api.models import (
     Action,
     Asset,
-    AssetCategoryTag,
     AssetCustomAttribute,
     AssetMutableMetadata,
-    AssetTradingVenue,
     IssuerPubkeyHistory,
 )
 from registry_api.schemas import (
@@ -25,10 +23,7 @@ from registry_api.schemas import (
     IssuerAction,
     IssuerActionResponse,
     LatestActionHashResponse,
-    MutableMetadata,
-    ReplaceCategoryTagsAction,
     ReplaceCustomAction,
-    ReplaceTradingVenuesAction,
     RotateIssuerPubkeyAction,
     SetCustomFieldAction,
 )
@@ -215,12 +210,6 @@ def get_latest_action_hash(db: Session, asset_id: str) -> LatestActionHashRespon
 
 def _apply_action(db: Session, asset: Asset, action: IssuerAction, row: Action) -> None:
     asset.updated_at = datetime.now(UTC)
-    if isinstance(action, ReplaceCategoryTagsAction):
-        _apply_replace_category_tags(db, asset, action, row)
-        return
-    if isinstance(action, ReplaceTradingVenuesAction):
-        _apply_replace_trading_venues(db, asset, action, row)
-        return
     if isinstance(action, ReplaceCustomAction):
         _apply_replace_custom(db, asset, action, row)
         return
@@ -247,37 +236,6 @@ def _apply_action(db: Session, asset: Asset, action: IssuerAction, row: Action) 
 
 
 def _reject_no_op_action(db: Session, asset: Asset, action: IssuerAction) -> None:
-    if isinstance(action, ReplaceCategoryTagsAction):
-        _ensure_mutable_schema(asset, action.mutable_schema_version)
-        current = [
-            row.tag
-            for row in db.scalars(
-                select(AssetCategoryTag)
-                .where(AssetCategoryTag.asset_uuid == asset.asset_uuid)
-                .order_by(AssetCategoryTag.position.asc())
-            )
-        ]
-        if current == action.category_tags:
-            raise RegistryError(
-                ErrorCode.NO_OP_ACTION, "action would not change registry state"
-            )
-        return
-    if isinstance(action, ReplaceTradingVenuesAction):
-        _ensure_mutable_schema(asset, action.mutable_schema_version)
-        current = [
-            {"venue": row.name, "url": row.url}
-            for row in db.scalars(
-                select(AssetTradingVenue)
-                .where(AssetTradingVenue.asset_uuid == asset.asset_uuid)
-                .order_by(AssetTradingVenue.position.asc())
-            )
-        ]
-        submitted = [venue.model_dump() for venue in action.trading_venues]
-        if current == submitted:
-            raise RegistryError(
-                ErrorCode.NO_OP_ACTION, "action would not change registry state"
-            )
-        return
     if isinstance(action, ReplaceCustomAction):
         _ensure_mutable_schema(asset, action.mutable_schema_version)
         if _current_custom(db, asset) == action.custom:
@@ -316,53 +274,6 @@ def _reject_no_op_action(db: Session, asset: Asset, action: IssuerAction) -> Non
             raise RegistryError(
                 ErrorCode.NO_OP_ACTION, "action would not change registry state"
             )
-
-
-def _apply_replace_category_tags(
-    db: Session, asset: Asset, action: ReplaceCategoryTagsAction, row: Action
-) -> None:
-    _ensure_mutable_schema(asset, action.mutable_schema_version)
-    mutable = MutableMetadata(
-        category_tags=action.category_tags, trading_venues=[], custom={}
-    )
-    db.execute(
-        delete(AssetCategoryTag).where(AssetCategoryTag.asset_uuid == asset.asset_uuid)
-    )
-    for position, tag in enumerate(mutable.category_tags):
-        db.add(
-            AssetCategoryTag(
-                asset_uuid=asset.asset_uuid,
-                tag=tag,
-                position=position,
-                updated_by_action_uuid=row.action_uuid,
-            )
-        )
-    _touch_mutable(db, asset, row)
-
-
-def _apply_replace_trading_venues(
-    db: Session, asset: Asset, action: ReplaceTradingVenuesAction, row: Action
-) -> None:
-    _ensure_mutable_schema(asset, action.mutable_schema_version)
-    mutable = MutableMetadata(
-        category_tags=[], trading_venues=action.trading_venues, custom={}
-    )
-    db.execute(
-        delete(AssetTradingVenue).where(
-            AssetTradingVenue.asset_uuid == asset.asset_uuid
-        )
-    )
-    for position, venue in enumerate(mutable.trading_venues):
-        db.add(
-            AssetTradingVenue(
-                asset_uuid=asset.asset_uuid,
-                name=venue.venue,
-                url=venue.url,
-                position=position,
-                updated_by_action_uuid=row.action_uuid,
-            )
-        )
-    _touch_mutable(db, asset, row)
 
 
 def _apply_replace_custom(

@@ -1,7 +1,4 @@
 import re
-from urllib.parse import urlsplit, urlunsplit
-
-from pydantic_core import PydanticCustomError
 
 from registry_api.errors import ErrorCode, RegistryError
 
@@ -20,8 +17,6 @@ CASE_INSENSITIVE_DOMAIN_PATTERN = (
     r"[A-Za-z](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.?$"
 )
 
-TRADING_VENUES = {"sideswap", "bitfinex"}
-CATEGORY_TAGS = {"stablecoin", "bond", "fixed-income", "tokenized"}
 ASSET_TYPES = {"AMP_asset", "stablecoin", "security_token", "other"}
 DOMAIN_VERIFICATION_METHODS = {"http", "dns"}
 INITIAL_ISSUER_PUBKEY_SOURCES = {
@@ -119,23 +114,6 @@ def normalize_domain(domain: str) -> str:
     return domain
 
 
-def normalize_url(url: str) -> str:
-    parts = urlsplit(url)
-    if parts.scheme not in {"http", "https"}:
-        raise ValueError("url scheme must be http or https")
-    if not parts.netloc:
-        raise ValueError("url must include a host")
-
-    scheme = parts.scheme.lower()
-    host = parts.hostname.lower() if parts.hostname else ""
-    port = f":{parts.port}" if parts.port else ""
-    if (scheme, parts.port) in {("http", 80), ("https", 443)}:
-        port = ""
-
-    path = parts.path or "/"
-    return urlunsplit((scheme, f"{host}{port}", path, parts.query, ""))
-
-
 def require_controlled_value(value: str, allowed: set[str], field: str) -> str:
     if value not in allowed:
         raise ValueError(f"unsupported {field}")
@@ -155,28 +133,6 @@ def require_case_insensitive_controlled_value(
     )
     if normalized is None:
         raise ValueError(f"unsupported {field}")
-    return normalized
-
-
-def available_trading_venues() -> list[str]:
-    return sorted(TRADING_VENUES)
-
-
-def require_category_tag(value: str) -> str:
-    normalized = value.lower()
-    if normalized not in CATEGORY_TAGS:
-        raise ValueError("unsupported category tag")
-    return normalized
-
-
-def require_trading_venue(value: str) -> str:
-    normalized = value.lower()
-    if normalized not in TRADING_VENUES:
-        raise PydanticCustomError(
-            "unsupported_trading_venue",
-            "unsupported trading venue",
-            {"available_trading_venues": available_trading_venues()},
-        )
     return normalized
 
 
