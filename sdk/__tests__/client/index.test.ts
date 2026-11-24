@@ -118,7 +118,7 @@ describe("AssetRegistryClient", () => {
         signer: new FakeSigner(),
       });
 
-      await client.v2.replaceCategoryTags(assetId, ["stablecoin"]);
+      await client.v2.replaceCustom(assetId, { isin: "US0000000001" });
 
       expect(fetchMock).toHaveBeenNthCalledWith(
         1,
@@ -129,7 +129,8 @@ describe("AssetRegistryClient", () => {
       const [, postOptions] = fetchMock.mock.calls[1];
       const body = JSON.parse((postOptions as RequestInit).body as string);
       expect(body.prev_action_hash).toBe("b".repeat(64));
-      expect(body.operation).toBe("replace_category_tags");
+      expect(body.operation).toBe("replace_custom");
+      expect(body.custom).toEqual({ isin: "US0000000001" });
     });
 
     it("uses custom_key in custom-field action payloads", async () => {
@@ -253,7 +254,7 @@ describe("AssetRegistryClient", () => {
           initial_issuer_pubkey_source: "contract",
           current_issuer_pubkey: `02${"ab".repeat(32)}`,
           issuer_pubkey_history: [],
-          mutable: { category_tags: [], trading_venues: [], custom: {} },
+          mutable: { custom: {} },
           icon: null,
           status: "active",
           created_at: "2026-05-15T12:00:00Z",
@@ -439,7 +440,7 @@ describe("AssetRegistryClient", () => {
       );
     });
 
-    it("maps pagination, sort, enum filters, and repeated categories exactly", async () => {
+    it("maps pagination, sort, and enum filters exactly", async () => {
       const fetchMock = jest.spyOn(global, "fetch").mockResolvedValueOnce(
         new Response(JSON.stringify({ items: [], page: 2, page_size: 25 }), { status: 200 })
       );
@@ -451,12 +452,10 @@ describe("AssetRegistryClient", () => {
         sort: "updated_at_desc",
         ticker: "USDt",
         assetType: "stablecoin",
-        categoryTags: ["stablecoin", "tokenized"],
-        tradingVenue: "bitfinex",
       });
 
       expect(fetchMock).toHaveBeenCalledWith(
-        "https://api.example.com/v2/assets?page=2&page_size=25&sort=updated_at_desc&ticker=USDt&asset_type=stablecoin&category_tag=stablecoin&category_tag=tokenized&trading_venue=bitfinex",
+        "https://api.example.com/v2/assets?page=2&page_size=25&sort=updated_at_desc&ticker=USDt&asset_type=stablecoin",
         expect.objectContaining({ method: "GET" })
       );
     });

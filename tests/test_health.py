@@ -168,7 +168,7 @@ def test_request_id_header_is_trimmed_and_capped() -> None:
     assert response.headers["X-Request-ID"] == "x" * 128
 
 
-def test_v2_asset_search_openapi_describes_sort_and_category_tag_semantics() -> None:
+def test_v2_asset_search_openapi_describes_sort_semantics() -> None:
     client = TestClient(create_app())
 
     response = client.get("/openapi.json")
@@ -190,4 +190,5 @@ def test_v2_asset_search_openapi_describes_sort_and_category_tag_semantics() -> 
         "updated_at_asc",
         "updated_at_desc",
     ]
-    assert "any of the supplied tags" in by_name["category_tag"]["description"]
+    assert "category_tag" not in by_name
+    assert "trading_venue" not in by_name

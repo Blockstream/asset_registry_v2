@@ -98,10 +98,6 @@ def _require_rfc3339_datetime(value: object) -> object:
     return value
 
 
-def _lowercase_query_value(value: object) -> object:
-    return value.lower() if isinstance(value, str) else value
-
-
 def _canonicalize_asset_type_query(value: object) -> object:
     if not isinstance(value, str):
         return value
@@ -114,10 +110,6 @@ def _canonicalize_asset_type_query(value: object) -> object:
 
 
 Rfc3339DateTime = Annotated[datetime, BeforeValidator(_require_rfc3339_datetime)]
-CategoryTagFilter = Annotated[
-    Literal["stablecoin", "bond", "fixed-income", "tokenized"],
-    BeforeValidator(_lowercase_query_value),
-]
 IMMUTABLE_ICON_CACHE_CONTROL = "public, max-age=31536000, immutable"
 
 
@@ -262,20 +254,6 @@ def search_assets_v2(
         BeforeValidator(_canonicalize_asset_type_query),
         Query(description="Case-insensitive exact asset type match."),
     ] = None,
-    category_tag: Annotated[
-        list[CategoryTagFilter] | None,
-        Query(
-            description=(
-                "Case-insensitive category tag filter. Multiple values match assets "
-                "with any of the supplied tags."
-            )
-        ),
-    ] = None,
-    trading_venue: Annotated[
-        Literal["sideswap", "bitfinex"] | None,
-        BeforeValidator(_lowercase_query_value),
-        Query(description="Case-insensitive exact trading venue match."),
-    ] = None,
     created_after: Annotated[
         Rfc3339DateTime | None,
         Query(description="Return assets created strictly after this timestamp."),
@@ -299,8 +277,6 @@ def search_assets_v2(
         ticker=ticker,
         name=name,
         asset_type=asset_type,
-        category_tag=category_tag,
-        trading_venue=trading_venue,
         created_after=created_after,
         updated_after=updated_after,
     )

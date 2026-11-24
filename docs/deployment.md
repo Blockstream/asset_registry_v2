@@ -6,6 +6,47 @@ Run migrations before serving traffic:
 alembic upgrade head
 ```
 
+### Retiring issuer category tags and trading venues
+
+Revision `0018_retire_issuer_metadata` is a breaking schema and API change.
+The updated application can run against the pre-0018 schema, but the previous
+version fails against the new schema because it still reads and writes the
+dropped tables. Apply it in a maintenance window:
+
+1. Take a database backup and record the affected-asset count:
+
+   ```sql
+   select count(distinct asset_uuid) from (
+     select asset_uuid from asset_category_tags
+     union all select asset_uuid from asset_trading_venues
+   ) affected;
+   ```
+
+2. Stop API workers and legacy import jobs.
+3. Run `alembic upgrade head`, then deploy the updated application.
+4. Before reopening traffic, confirm the migration log line
+   `Retired issuer metadata fields: {...}` and the retirement action count
+   below both match the recorded count, both tables are gone, and asset
+   responses return `mutable` with only `custom`. Any
+   `Invalidating undecodable v2 cache` warnings name assets whose cached v2
+   response is now served by live serialization.
+
+   ```sql
+   select count(*) from actions
+   where operation = 'retire_issuer_metadata_fields';
+   ```
+
+The migration runs in one transaction and makes no network calls. It waits at
+most 30 seconds for each lock it needs, including the retiring tables and the
+`assets` and `actions` tables their foreign keys reference. It fails if
+another session still holds a conflicting lock, so stop all workers first. A
+failure rolls back actions, data, and schema changes, so it can be rerun safely.
+
+`alembic downgrade 0017_reconcile_legacy_data` recreates the empty tables,
+indexes, and registry-version triggers and restores empty arrays in cached v2
+responses. Cleared values are not restored; they remain available in the
+retirement audit entries, which the downgrade preserves.
+
 Recommended production settings:
 
 - Set `ASSET_REGISTRY_ENVIRONMENT=production`.

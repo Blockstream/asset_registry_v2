@@ -120,8 +120,6 @@ def test_generated_openapi_preserves_stable_operation_ids_and_examples() -> None
     expected_examples = {
         ("/v2/assets", "post"): {"v2Contract"},
         ("/v2/assets/{asset_id}/actions", "post"): {
-            "replaceCategoryTags",
-            "replaceTradingVenues",
             "replaceCustom",
             "setCustomField",
             "deleteCustomField",

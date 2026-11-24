@@ -52,35 +52,6 @@ REGISTER_ASSET_EXAMPLES: dict[str, dict[str, Any]] = {
 }
 
 ISSUER_ACTION_EXAMPLES: dict[str, dict[str, Any]] = {
-    "replaceCategoryTags": {
-        "summary": "Replace category tags",
-        "value": {
-            "asset_id": ASSET_ID,
-            "category_tags": ["stablecoin", "tokenized"],
-            "mutable_schema_version": 1,
-            "nonce": "9b2b0b3f-8f2e-4f3d-a979-1f2e8a947f87e",
-            "operation": "replace_category_tags",
-            "prev_action_hash": PREV_ACTION_HASH,
-            "signing_context": "liquid-asset-registry-action-v1",
-            "timestamp": "2026-04-27T15:30:00.123Z",
-        },
-    },
-    "replaceTradingVenues": {
-        "summary": "Replace trading venues using controlled venue identifiers",
-        "value": {
-            "asset_id": ASSET_ID,
-            "mutable_schema_version": 1,
-            "nonce": "2099dc1c-e751-4b5e-b570-bb71500a36d0",
-            "operation": "replace_trading_venues",
-            "prev_action_hash": PREV_ACTION_HASH,
-            "signing_context": "liquid-asset-registry-action-v1",
-            "timestamp": "2026-04-27T15:30:30.123Z",
-            "trading_venues": [
-                {"venue": "sideswap", "url": "https://api.sideswap.io/assets/ABT"},
-                {"venue": "bitfinex", "url": "https://trading.bitfinex.com/t/ABT:USD"},
-            ],
-        },
-    },
     "replaceCustom": {
         "summary": "Replace the full custom metadata object",
         "value": {

@@ -82,12 +82,6 @@ class Asset(Base, TimestampMixin):
     mutable_metadata: Mapped["AssetMutableMetadata"] = relationship(
         back_populates="asset", uselist=False
     )
-    trading_venues: Mapped[list["AssetTradingVenue"]] = relationship(
-        back_populates="asset"
-    )
-    category_tags: Mapped[list["AssetCategoryTag"]] = relationship(
-        back_populates="asset"
-    )
     custom_attributes: Mapped[list["AssetCustomAttribute"]] = relationship(
         back_populates="asset"
     )
@@ -213,65 +207,6 @@ class AssetMutableMetadata(Base):
             "schema_version >= 1", name="asset_mutable_metadata_schema_version_chk"
         ),
         Index("asset_mutable_metadata_action_idx", "updated_by_action_uuid"),
-    )
-
-
-class AssetTradingVenue(Base, TimestampMixin):
-    __tablename__ = "asset_trading_venues"
-
-    trading_venue_uuid: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
-    )
-    asset_uuid: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("assets.asset_uuid"), nullable=False
-    )
-    name: Mapped[str] = mapped_column(Text, nullable=False)
-    url: Mapped[str] = mapped_column(Text, nullable=False)
-    position: Mapped[int] = mapped_column(Integer, nullable=False)
-    updated_by_action_uuid: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("actions.action_uuid"), nullable=True
-    )
-
-    asset: Mapped[Asset] = relationship(back_populates="trading_venues")
-
-    __table_args__ = (
-        UniqueConstraint(
-            "asset_uuid", "url", name="asset_trading_venues_asset_url_uidx"
-        ),
-        UniqueConstraint(
-            "asset_uuid", "name", "url", name="asset_trading_venues_asset_name_url_uidx"
-        ),
-        Index("asset_trading_venues_name_idx", "name", "asset_uuid"),
-        Index("asset_trading_venues_asset_position_idx", "asset_uuid", "position"),
-    )
-
-
-class AssetCategoryTag(Base):
-    __tablename__ = "asset_category_tags"
-
-    category_tag_uuid: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
-    )
-    asset_uuid: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("assets.asset_uuid"), nullable=False
-    )
-    tag: Mapped[str] = mapped_column(Text, nullable=False)
-    position: Mapped[int] = mapped_column(Integer, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
-    updated_by_action_uuid: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("actions.action_uuid"), nullable=True
-    )
-
-    asset: Mapped[Asset] = relationship(back_populates="category_tags")
-
-    __table_args__ = (
-        UniqueConstraint(
-            "asset_uuid", "tag", name="asset_category_tags_asset_tag_uidx"
-        ),
-        Index("asset_category_tags_tag_idx", "tag", "asset_uuid"),
-        Index("asset_category_tags_asset_position_idx", "asset_uuid", "position"),
     )
 
 

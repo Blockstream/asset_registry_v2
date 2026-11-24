@@ -86,8 +86,8 @@ def test_generated_openapi_exposes_runtime_validation_constraints() -> None:
     assert "[\\x01-\\x08\\x0e-\\x1b!-\\x7f]" in components["ContractMetadata"]["properties"]["name"][
         "pattern"
     ]
-    assert components["TradingVenue"]["properties"]["url"]["pattern"].startswith("^[hH][tT][tT][pP]")
-    assert components["ReplaceCategoryTagsAction"]["properties"]["category_tags"]["uniqueItems"] is True
+    assert "TradingVenue" not in components
+    assert "ReplaceCategoryTagsAction" not in components
     assert components["UpdateAdminPermissionsAction"]["properties"]["permissions"]["uniqueItems"] is True
 
 

@@ -58,8 +58,6 @@ def cleanup_database(engine) -> None:
         connection.execute(text("delete from issuer_pubkey_history"))
         connection.execute(text("delete from asset_admin_annotations"))
         connection.execute(text("delete from asset_custom_attributes"))
-        connection.execute(text("delete from asset_category_tags"))
-        connection.execute(text("delete from asset_trading_venues"))
         connection.execute(text("delete from asset_mutable_metadata"))
         connection.execute(text("delete from actions"))
         connection.execute(text("delete from assets"))
@@ -84,8 +82,6 @@ def v2_request(
                 "version": 2,
             },
             "mutable": {
-                "category_tags": ["stablecoin"],
-                "trading_venues": [{"venue": "sideswap", "url": f"https://sideswap.io/assets/{ticker}"}],
                 "custom": {},
             },
         }

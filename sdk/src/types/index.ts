@@ -1,9 +1,5 @@
 import type { components, operations } from "../generated/openapi.js";
 
-export type TradingVenue = components["schemas"]["TradingVenue"];
-export type CategoryTag = NonNullable<
-  NonNullable<operations["searchAssetsV2"]["parameters"]["query"]>["category_tag"]
->[number];
 export type AssetType = NonNullable<NonNullable<operations["searchAssetsV2"]["parameters"]["query"]>["asset_type"]>;
 export type MutableMetadata = components["schemas"]["MutableMetadata-Input"];
 export type LegacyExtraValue = components["schemas"]["LegacyExtraValue-Input"];
@@ -44,8 +40,6 @@ export interface SearchParams {
   ticker?: SearchQuery["ticker"];
   name?: SearchQuery["name"];
   assetType?: SearchQuery["asset_type"];
-  categoryTags?: SearchQuery["category_tag"];
-  tradingVenue?: SearchQuery["trading_venue"];
   createdAfter?: SearchQuery["created_after"];
   updatedAfter?: SearchQuery["updated_after"];
 }

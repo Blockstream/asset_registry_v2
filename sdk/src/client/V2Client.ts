@@ -5,9 +5,7 @@ import type {
   DeregisterAction,
   IssuerAction,
   IssuerActionInput,
-  ReplaceCategoryTagsAction,
   ReplaceCustomAction,
-  ReplaceTradingVenuesAction,
   RotateIssuerPubkeyAction,
   SetCustomFieldAction,
   ProposeIconAction,
@@ -17,12 +15,10 @@ import type {
   AssetAuditParams,
   AssetResponse,
   AuditSearchParams,
-  CategoryTag,
   LegacyExtraValue,
   MutableMetadata,
   SearchParams,
   SearchResponse,
-  TradingVenue,
   V2Asset,
   V2AssetContract,
 } from "../types/index.js";
@@ -94,8 +90,6 @@ export class V2Client extends BaseClient {
     appendQuery(query, "ticker", params.ticker);
     appendQuery(query, "name", params.name);
     appendQuery(query, "asset_type", params.assetType);
-    for (const categoryTag of params.categoryTags ?? []) query.append("category_tag", categoryTag);
-    appendQuery(query, "trading_venue", params.tradingVenue);
     appendQuery(query, "created_after", params.createdAfter);
     appendQuery(query, "updated_after", params.updatedAfter);
     return this.httpClient.get<SearchResponse>(withQuery("/v2/assets", query));
@@ -191,28 +185,6 @@ export class V2Client extends BaseClient {
       query,
       "Asset-Registry-Signature"
     );
-  }
-
-  async replaceCategoryTags(assetId: string, categoryTags: CategoryTag[]): Promise<IssuerActionResponse> {
-    const action: IssuerActionInput = {
-      signing_context: SIGNING_CONTEXT,
-      asset_id: assetId,
-      operation: "replace_category_tags",
-      mutable_schema_version: 1,
-      category_tags: categoryTags,
-    } satisfies Omit<ReplaceCategoryTagsAction, "prev_action_hash" | "timestamp" | "nonce">;
-    return this.submitIssuerAction(action);
-  }
-
-  async replaceTradingVenues(assetId: string, tradingVenues: TradingVenue[]): Promise<IssuerActionResponse> {
-    const action: IssuerActionInput = {
-      signing_context: SIGNING_CONTEXT,
-      asset_id: assetId,
-      operation: "replace_trading_venues",
-      mutable_schema_version: 1,
-      trading_venues: tradingVenues,
-    } satisfies Omit<ReplaceTradingVenuesAction, "prev_action_hash" | "timestamp" | "nonce">;
-    return this.submitIssuerAction(action);
   }
 
   async replaceCustom(assetId: string, custom: NonNullable<MutableMetadata["custom"]>): Promise<IssuerActionResponse> {

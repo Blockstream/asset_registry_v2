@@ -24,8 +24,6 @@ class Operation(StrEnum):
     LEGACY_DEREGISTER = "legacy_deregister"
     MIGRATE_CONTRACT_METADATA = "migrate_contract_metadata"
 
-    REPLACE_CATEGORY_TAGS = "replace_category_tags"
-    REPLACE_TRADING_VENUES = "replace_trading_venues"
     REPLACE_CUSTOM = "replace_custom"
     SET_CUSTOM_FIELD = "set_custom_field"
     DELETE_CUSTOM_FIELD = "delete_custom_field"

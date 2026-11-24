@@ -31,10 +31,10 @@ describe("HttpError", () => {
       details: {
         errors: [
           {
-            type: "unsupported_trading_venue",
-            loc: ["replace_trading_venues", "trading_venues", 0, "venue"],
-            ctx: { available_trading_venues: ["bitfinex", "sideswap"] },
-            msg: "unsupported trading venue",
+            type: "string_too_long",
+            loc: ["set_custom_field", "custom_key"],
+            ctx: { max_length: 255 },
+            msg: "String should have at most 255 characters",
           },
         ],
       },
@@ -46,9 +46,9 @@ describe("HttpError", () => {
     expect(error.details).toEqual(body.details);
     expect(Object.keys(error)).not.toContain("body");
     expect(Object.keys(error)).not.toContain("responseBody");
-    expect(JSON.stringify(error)).toContain('"available_trading_venues":["bitfinex","sideswap"]');
+    expect(JSON.stringify(error)).toContain('"ctx":{"max_length":255}');
     expect(JSON.stringify(error)).not.toContain('"body"');
-    expect(inspect(error)).toContain('"available_trading_venues"');
+    expect(inspect(error)).toContain('"max_length"');
   });
 
   it("isRetryable returns true for 429", () => {
